@@ -39,7 +39,7 @@ x86 compilation image: x86_sdk_compile_humble_based:latest
 ### 3.2 Image Management
 On first use, the script will automatically:
 
-Download the image package from CDN (~3GB) Extract and load the Docker image Verify image integrity Note: Image hosting address: https://cdn.robosense.cn/
+Download the image package from CDN (~3GB) Extract and load the Docker image Verify image integrity.
 
 ## 4. Usage
 
@@ -100,8 +100,8 @@ Common issues and solutions:
 - **Slow image download:**
 ```bash
 # Manually download and place in the script directory
-wget https://cdn.robosense.cn/arm_sdk_compile_humble_based.tgz
-wget https://cdn.robosense.cn/x86_sdk_compile_humble_based.tgz
+wget https://cdn.robosense.cn/AC_wiki/arm_sdk_compile_humble_based.tgz
+wget https://cdn.robosense.cn/AC_wiki/x86_sdk_compile_humble_based.tgz
 ```
 
 - **Docker not found:**

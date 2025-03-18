@@ -70,7 +70,7 @@ check_and_load_image() {
     # Check for local tgz
     if [ ! -f "${tgz_file}" ]; then
         echo -e "${YELLOW}Downloading ${tgz_file}...${NC}"
-        if ! wget -q "https://cdn.robosense.cn/${tgz_file}"; then
+        if ! wget -q "https://cdn.robosense.cn/AC_wiki/${tgz_file}"; then
             echo -e "${RED}Download failed: ${tgz_file}${NC}"
             exit 1
         fi

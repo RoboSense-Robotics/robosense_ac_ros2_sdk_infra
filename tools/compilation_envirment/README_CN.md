@@ -42,7 +42,6 @@ ARM编译镜像：​ arm_sdk_compile_humble_based:latest
 从CDN下载镜像包（约3GB）
 解压并加载Docker镜像
 验证镜像完整性
-注：镜像托管地址：https://cdn.robosense.cn/
 
 ## 4. 使用方式
 
@@ -101,8 +100,8 @@ colcon build
 - **镜像下载缓慢:**
 ```bash
 # 可手动下载后放入脚本同目录
-wget https://cdn.robosense.cn/arm_sdk_compile_humble_based.tgz
-wget https://cdn.robosense.cn/x86_sdk_compile_humble_based.tgz
+wget https://cdn.robosense.cn/AC_wiki/arm_sdk_compile_humble_based.tgz
+wget https://cdn.robosense.cn/AC_wiki/x86_sdk_compile_humble_based.tgz
 ```
 
 - **找不到 Docker:**

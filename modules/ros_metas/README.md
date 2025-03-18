@@ -1,6 +1,6 @@
 # ros2_metas
 
-[README](http://10.10.0.20/super_sensor_sdk/ros2_sdk/sdk_infra/-/blob/main/modules/ros_metas/README.md) | [中文文档](http://10.10.0.20/super_sensor_sdk/ros2_sdk/sdk_infra/-/blob/main/modules/ros_metas/README_CN.md)
+[中文文档](https://github.com/RoboSense-Robotics/robosense_ac_ros2_sdk_infra/blob/main/modules/ros_metas/README_CN.md)
 
 ## 1. Introduction
 
@@ -150,9 +150,4 @@ This custom ROS2 package defines the message formats for H.265 compressed images
 3. imu topic:/rs_imu
 4. camera h265 video topic:/rs_camera/compressed
 
-## 5. FAQ
-
-For further details and troubleshooting, refer to the FAQ section.
-
-[Create New Issue](http://gitlab.robosense.cn/super_sensor_sdk/sdk_middleware/issues/new)
 

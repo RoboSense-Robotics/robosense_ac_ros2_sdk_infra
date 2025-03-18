@@ -1,6 +1,6 @@
 # ros2_codec
 
-[README](http://10.10.0.20/super_sensor_sdk/ros2_sdk/sdk_infra/-/blob/main/modules/ros2_codec/README.md) | [中文文档](http://10.10.0.20/super_sensor_sdk/ros2_sdk/sdk_infra/-/blob/main/modules/ros2_codec/README_CN.md)
+[README](https://github.com/RoboSense-Robotics/robosense_ac_ros2_sdk_infra/blob/main/modules/ros2_codec/README.md)
 
 ## 1. 简介
 
@@ -16,9 +16,9 @@ ROS 2环境准备好后，使用以下命令将代码下载到工作目录下。
 
 ```bash
 # Using ssh
-git clone git@gitlab.robosense.cn:super_sensor_sdk/ros2_sdk/sdk_infra.git
+git clone git@github.com:RoboSense-Robotics/robosense_ac_ros2_sdk_infra.git
 # Using http
-git clone http://gitlab.robosense.cn/super_sensor_sdk/ros2_sdk/sdk_infra.git
+git clone https://github.com/RoboSense-Robotics/robosense_ac_ros2_sdk_infra.git
 ```
 
 然后进入modules/ros2_codec目录, 使用以下命令进行编译:
@@ -43,9 +43,4 @@ source install/setup.bash
 ```bash
 ros2 run ros2_codec codec_node
 ```
-## 4 FAQ
-
-更详细的内容及问题，请访问FAQ章节
-
-[Create New Issue](http://gitlab.robosense.cn/super_sensor_sdk/sdk_middleware/issues/new)
 
