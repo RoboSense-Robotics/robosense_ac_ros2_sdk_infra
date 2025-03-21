@@ -59,6 +59,8 @@ extern "C" {
 #elif ROS2_FOUND
 #include <rclcpp/rclcpp.hpp>
 #include <robosense_msgs/msg/rs_compressed_image.hpp>
+#include <robosense_msgs/msg/rs_image.hpp>
+#include <robosense_msgs/msg/rs_point_cloud.hpp>
 #include <sensor_msgs/msg/image.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
@@ -84,6 +86,14 @@ public:
       : Node("ms_node")
 #endif
   {
+#ifdef ROS2_FOUND
+    const char* val = std::getenv("RMW_FASTRTPS_USE_QOS_FROM_XML");
+    if (val != nullptr && std::string(val) == "1") {
+      zero_copy = true;
+    } else {
+      zero_copy = false;
+    }
+#endif
 #ifdef DEBUG_STATISTICS
     auto point_options = rclcpp::SubscriptionOptions();
     point_options.topic_stats_options.state =
@@ -93,9 +103,11 @@ public:
     auto point_callback = [this](sensor_msgs::msg::PointCloud2 msg) {
       this->topic_point_callback(msg);
     };
-    point_subscription_ =
-        this->create_subscription<sensor_msgs::msg::PointCloud2>(
-            "/rs_lidar/points", 10, point_callback, point_options);
+    if(!zero_copy) {
+      point_subscription_ =
+          this->create_subscription<sensor_msgs::msg::PointCloud2>(
+              "/rs_lidar/points", 10, point_callback, point_options);
+    }
 
     auto imu_options = rclcpp::SubscriptionOptions();
     imu_options.topic_stats_options.state =
@@ -130,10 +142,19 @@ public:
         nh.advertise<sensor_msgs::PointCloud2>("/rs_lidar/points", 10);
     publisher_imu = nh.advertise<sensor_msgs::Imu>("/rs_imu", 10);
 #elif ROS2_FOUND
-    publisher_rgb =
-        this->create_publisher<sensor_msgs::msg::Image>("/rs_camera/rgb", 10);
-    publisher_depth = this->create_publisher<sensor_msgs::msg::PointCloud2>(
-        "/rs_lidar/points", 10);
+    if(zero_copy) {
+      publisher_rgb_loan =
+          this->create_publisher<robosense_msgs::msg::RsImage>("/rs_camera/rgb", 10);
+      publisher_depth_loan = 
+          this->create_publisher<robosense_msgs::msg::RsPointCloud>(
+          "/rs_lidar/points", 10);
+    }
+    else {
+      publisher_rgb =
+          this->create_publisher<sensor_msgs::msg::Image>("/rs_camera/rgb", 10);
+      publisher_depth = this->create_publisher<sensor_msgs::msg::PointCloud2>(
+          "/rs_lidar/points", 10);
+    }
     publisher_imu = this->create_publisher<sensor_msgs::msg::Imu>(
         "/rs_imu", 10);
 #ifdef RK3588
@@ -340,7 +361,12 @@ private:
                      const std::string &uuid) {
     (void)(uuid);
     if (msgPtr) {
-      depth_handle(msgPtr);
+      if (zero_copy) {
+        depth_handle_loan(msgPtr);
+      }
+      else {
+        depth_handle(msgPtr);
+      }
     }
   }
 
@@ -485,7 +511,7 @@ private:
     auto rgb_msg = std::make_shared<sensor_msgs::Image>();
 #elif ROS2_FOUND
     auto custom_time = rclcpp::Time(sec, nsec);
-    auto rgb_msg = std::make_shared<sensor_msgs::msg::Image>();
+
 #endif // ROS_ROS2_FOUND
 
 #ifdef RK3588
@@ -591,25 +617,169 @@ private:
     }
 #endif // RK3588
     // Publish the RGB image as a ROS Image message
-    rgb_msg->header.stamp = custom_time;
-    rgb_msg->header.frame_id = "rgb";
-    rgb_msg->height = frame->height;
-    rgb_msg->width = frame->width;
-    rgb_msg->encoding = "rgb8";
-    rgb_msg->is_bigendian = false;
-#ifdef RK3588
-    rgb_msg->step = frame->width * get_bpp_from_format(RK_FORMAT_RGB_888) * 1;
-#else
-    rgb_msg->step = frame->width * 3 * 1;
-#endif // RK3588
+    if (zero_copy) {
+      auto loanedMsg = publisher_rgb_loan->borrow_loaned_message();
+      // 判断消息是否可用，可能出现获取消息失败导致消息不可用的情况
+      if (!loanedMsg.is_valid()) {
+        // 获取消息失败，丢弃该消息
+        RCLCPP_INFO(this->get_logger(), "Failed to get LoanMessage!");
+        return;
+      }
+      // 引用方式获取实际的消息
+      auto& msg = loanedMsg.get();
+      auto rgb_msg = &msg;
+      rgb_msg->header.stamp = custom_time;
+      const char* id_str = "rgb";
+      std::copy(id_str, id_str + strlen(id_str) + 1, rgb_msg->header.frame_id.begin());
+      rgb_msg->height = frame->height;
+      rgb_msg->width = frame->width;
+      const char* encoding_str = "rgb8";
+      std::copy(encoding_str, encoding_str + strlen(encoding_str) + 1, rgb_msg->encoding.begin());
+      rgb_msg->is_bigendian = false;
+  #ifdef RK3588
+      rgb_msg->step = frame->width * get_bpp_from_format(RK_FORMAT_RGB_888) * 1;
+  #else
+      rgb_msg->step = frame->width * 3 * 1;
+  #endif // RK3588
+      // rgb_msg->data = rgb_buf;
+      if (rgb_buf.size() <= rgb_msg->data.size()) {
+          std::copy(rgb_buf.begin(), rgb_buf.end(), rgb_msg->data.begin());
+      } else {
+          // 处理错误：尺寸不匹配
+          RCLCPP_ERROR(rclcpp::get_logger("metaS_node"), "RGB buffer size too large!");
+      }
+
+  #ifdef ROS_FOUND
+      publisher_rgb.publish(*rgb_msg);
+  #elif ROS2_FOUND
+      publisher_rgb_loan->publish(std::move(*rgb_msg));
+  #endif // ROS_ROS2_FOUND
+    }
+    else {
+      auto rgb_msg = std::make_shared<sensor_msgs::msg::Image>();
+      rgb_msg->header.stamp = custom_time;
+      rgb_msg->header.frame_id = "rgb";
+      rgb_msg->height = frame->height;
+      rgb_msg->width = frame->width;
+      rgb_msg->encoding = "rgb8";
+      rgb_msg->is_bigendian = false;
+  #ifdef RK3588
+      rgb_msg->step = frame->width * get_bpp_from_format(RK_FORMAT_RGB_888) * 1;
+  #else
+      rgb_msg->step = frame->width * 3 * 1;
+  #endif // RK3588
     rgb_msg->data = rgb_buf;
 
-#ifdef ROS_FOUND
-    publisher_rgb.publish(*rgb_msg);
-#elif ROS2_FOUND
-    publisher_rgb->publish(*rgb_msg);
-#endif // ROS_ROS2_FOUND
+  #ifdef ROS_FOUND
+      publisher_rgb.publish(*rgb_msg);
+  #elif ROS2_FOUND
+      publisher_rgb->publish(*rgb_msg);
+  #endif // ROS_ROS2_FOUND
+    }
   }
+
+  void depth_handle_loan(const std::shared_ptr<PointCloudT<RsPointXYZIRT>> &frame) {
+    #ifdef ROS_FOUND
+        auto cloud_msg = std::make_shared<sensor_msgs::PointCloud2>();
+    #elif ROS2_FOUND
+        auto loanedMsg = publisher_depth_loan->borrow_loaned_message();
+        // 判断消息是否可用，可能出现获取消息失败导致消息不可用的情况
+        if (!loanedMsg.is_valid()) {
+          // 获取消息失败，丢弃该消息
+          RCLCPP_INFO(this->get_logger(), "Failed to get LoanMessage!");
+          return;
+        }
+        // 引用方式获取实际的消息
+        auto& msg = loanedMsg.get();
+        auto cloud_msg = &msg;
+    #endif // ROS_ROS2_FOUND
+        const char* id_str = "rslidar";
+        std::copy(id_str, id_str + strlen(id_str) + 1, cloud_msg->header.frame_id.begin());
+        cloud_msg->height = 1;
+        cloud_msg->width = frame->size();
+    
+        // Define the structure of the point fields in the point cloud
+        const char* field_names[] = {"x", "y", "z", "intensity", "ring", "timestamp"};
+        for (int i = 0; i < 6; i++) {
+          std::copy(field_names[i], field_names[i] + strlen(field_names[i]) + 1, cloud_msg->fields[i].name.begin());
+        }
+        cloud_msg->fields[0].offset = 0;
+    #ifdef ROS_FOUND
+        cloud_msg->fields[0].datatype = sensor_msgs::PointField::FLOAT32;
+    #elif ROS2_FOUND
+        cloud_msg->fields[0].datatype = sensor_msgs::msg::PointField::FLOAT32;
+    #endif // ROS_ROS2_FOUND
+        cloud_msg->fields[0].count = 1;
+    
+        cloud_msg->fields[1].offset = 4;
+    #ifdef ROS_FOUND
+        cloud_msg->fields[1].datatype = sensor_msgs::PointField::FLOAT32;
+    #elif ROS2_FOUND
+        cloud_msg->fields[1].datatype = sensor_msgs::msg::PointField::FLOAT32;
+    #endif // ROS_ROS2_FOUND
+        cloud_msg->fields[1].count = 1;
+    
+        cloud_msg->fields[2].offset = 8;
+    #ifdef ROS_FOUND
+        cloud_msg->fields[2].datatype = sensor_msgs::PointField::FLOAT32;
+    #elif ROS2_FOUND
+        cloud_msg->fields[2].datatype = sensor_msgs::msg::PointField::FLOAT32;
+    #endif // ROS_ROS2_FOUND
+        cloud_msg->fields[2].count = 1;
+    
+        cloud_msg->fields[3].offset = 16;
+    #ifdef ROS_FOUND
+        cloud_msg->fields[3].datatype = sensor_msgs::PointField::FLOAT32;
+    #elif ROS2_FOUND
+        cloud_msg->fields[3].datatype = sensor_msgs::msg::PointField::FLOAT32;
+    #endif // ROS_ROS2_FOUND
+        cloud_msg->fields[3].count = 1;
+    
+        cloud_msg->fields[4].offset = 20;
+    #ifdef ROS_FOUND
+        cloud_msg->fields[4].datatype = sensor_msgs::PointField::UINT16;
+    #elif ROS2_FOUND
+        cloud_msg->fields[4].datatype = sensor_msgs::msg::PointField::UINT16;
+    #endif // ROS_ROS2_FOUND
+        cloud_msg->fields[4].count = 1;
+    
+        cloud_msg->fields[5].offset = 24;
+    #ifdef ROS_FOUND
+        cloud_msg->fields[5].datatype = sensor_msgs::PointField::FLOAT64;
+    #elif ROS2_FOUND
+        cloud_msg->fields[5].datatype = sensor_msgs::msg::PointField::FLOAT64;
+    #endif // ROS_ROS2_FOUND
+        cloud_msg->fields[5].count = 1;
+    
+        cloud_msg->is_bigendian = false;
+        cloud_msg->point_step = 32;
+        cloud_msg->row_step = cloud_msg->point_step * cloud_msg->width;
+    
+        // cloud_msg->data.resize(cloud_msg->row_step);
+    
+        // copy memory
+        memcpy(cloud_msg->data.data(), frame->points.data(), cloud_msg->row_step);
+    
+        // NOTE: msg header is points tail time
+        double tail_stamp = frame->points[frame->size() - 1].timestamp;
+    #ifdef ROS_FOUND
+        uint32_t sec = static_cast<uint32_t>(tail_stamp);
+        uint32_t nsec = static_cast<uint32_t>((tail_stamp - sec) * 1e9);
+        auto custom_time = ros::Time(sec, nsec);
+    #elif ROS2_FOUND
+        uint32_t sec = static_cast<uint32_t>(tail_stamp);
+        uint32_t nsec = static_cast<uint32_t>((tail_stamp - sec) * 1e9);
+        auto custom_time = rclcpp::Time(sec, nsec);
+    #endif // ROS_ROS2_FOUND
+    
+        cloud_msg->header.stamp = custom_time;
+    
+    #ifdef ROS_FOUND
+        publisher_depth.publish(*cloud_msg);
+    #elif ROS2_FOUND
+        publisher_depth_loan->publish(std::move(*cloud_msg));
+    #endif // ROS_ROS2_FOUND
+      }
 
   void depth_handle(const std::shared_ptr<PointCloudT<RsPointXYZIRT>> &frame) {
 #ifdef ROS_FOUND
@@ -787,7 +957,10 @@ private:
 #endif // RK3588
 
 #elif ROS2_FOUND
-  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr publisher_rgb;
+    bool zero_copy;
+    rclcpp::Publisher<robosense_msgs::msg::RsImage>::SharedPtr publisher_rgb_loan;
+    rclcpp::Publisher<robosense_msgs::msg::RsPointCloud>::SharedPtr publisher_depth_loan;
+    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr publisher_rgb;
 #ifdef RK3588
   rclcpp::Publisher<robosense_msgs::msg::RsCompressedImage>::SharedPtr
       publisher_h265;

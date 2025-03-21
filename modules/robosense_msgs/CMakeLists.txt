@@ -33,9 +33,13 @@ if(ROS_VERSION EQUAL 1)
 
   add_message_files(
     FILES
+    RsHeader.msg
+    RsPointField.msg
+    RsPointCloud.msg
     RsCompressedImage.msg
     RslidarPacket.msg
     RslidarScans.msg
+    RsImage.msg
   )
 
   generate_messages(
@@ -58,9 +62,13 @@ elseif(ROS_VERSION EQUAL 2)
   find_package(rosidl_default_generators REQUIRED)
 
   rosidl_generate_interfaces(${PROJECT_NAME}
+    "msg/RsHeader.msg"
+    "msg/RsPointField.msg"
+    "msg/RsPointCloud.msg"
     "msg/RsCompressedImage.msg"
     "msg/RslidarPacket.msg"
     "msg/RslidarScans.msg"
+    "msg/RsImage.msg"
     DEPENDENCIES builtin_interfaces std_msgs
   )
 

@@ -62,10 +62,16 @@ sudo apt-get install libavformat-dev libavdevice-dev libavcodec-dev
 ```
 
 #### 2.1.3 Build
-Then, enter the modules/ros_metas directory, Run the following commands to compile:
+Then, enter the modules directory, Run the following commands to compile:
 
 ```bash
+# Full build
 colcon build
+
+# Or build individually
+colcon build --symlink-install --packages-select robosense_msgs
+colcon build --symlink-install --packages-select ros2_codec
+colcon build --symlink-install --packages-select ros_metas
 ```
 
 ## 3. Usage
@@ -79,9 +85,17 @@ source install/setup.bash
 
 ### 3.2 Run the ros_metas Node
 The ros_metas node can be run using the ros2 run command.
+1. Non-zero-copy mode
 ```bash
-ros2 run  metas_ros ms_node
+ros2 run metas_ros ms_node
 ```
+2. Zero-copy mode (only for ROS2 Humble)
+```bash
+export FASTRTPS_DEFAULT_PROFILES_FILE=ros_metas/conf/shm_fastdds.xml
+export RMW_FASTRTPS_USE_QOS_FROM_XML=1
+ros2 run metas_ros ms_node
+```
+
 ### 3.3 View the published sensor data.
 
 #### 3.3.1 View Published Sensor Data Through a User Interface
@@ -123,7 +137,6 @@ ros2 bag record /topic1 /topic2
 ```
 2. Play Back Data:
 Once the recording is complete, you can play back the recorded data using the ros2 bag play command:
-sh
 ```bash
 ros2 bag play <bagfile>
 ```
@@ -144,10 +157,25 @@ The ros2_metas node relies on several key libraries and packages to function pro
 * std_msgs: Provides standard message types for basic data types, such as integers, floats, and strings.
 #### 4.1.2 robosense_msgs:
 This custom ROS2 package defines the message formats for H.265 compressed images and other sensor data specific to the metaS sensors. It is essential for the ros2_metas node to interpret and publish the sensor data correctly.
+
 ### 4.2 Topic 
 1. camera RGB image topic:/rs_camera/rgb
+   * Zero-copy mode msg (custom): robosense_msgs/msg/RsImage
+   * Non-zero-copy mode msg (ROS2 standard): sensor_msgs/msg/Image
 2. lidar topic:/rs_lidar/points
+   * Zero-copy mode msg (custom): robosense_msgs/msg/RsPointCloud
+   * Non-zero-copy mode msg (ROS2 standard): sensor_msgs/msg/PointCloud2
 3. imu topic:/rs_imu
 4. camera h265 video topic:/rs_camera/compressed
+
+## 5. Limitations
+Compared to the ROS2 publisher/subscriber data transmission method, using zero-copy transmission has the following limitations:
+* Currently only supports Humble version, it is recommended to use RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT for QOS Reliability (it is recommended to directly use rclcpp::SensorDataQoS() to set QOS)
+* QOS History only supports KEEPLAST, does not support KEEPALL, and KEEPLAST cannot be set too large, there is a memory limit, currently set to a maximum of 256M memory
+* The size of the transmitted message is fixed, that is, the sizeof value of the message does not change, and it cannot contain variable-length data types, such as: string, dynamic array
+* RMW_QOS_POLICY_RELIABILITY_RELIABLE has stability issues under multiple communication methods
+* Can only be used for inter-process communication on the same device, cannot be transmitted across devices
+* The publisher message must be obtained first and then assigned to send, and it must be judged whether it is successfully obtained
+* The message received by the subscriber is only valid in the callback function and cannot be used outside the callback function
 
 

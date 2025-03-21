@@ -20,18 +20,17 @@ git clone git@github.com:RoboSense-Robotics/robosense_ac_ros2_sdk_infra.git
 # Using http
 git clone https://github.com/RoboSense-Robotics/robosense_ac_ros2_sdk_infra.git
 ```
-Then, prepare system build environment base on Radxa and X86.
-然后进行系统编译依赖的准备操作，如下基于Radxa开发板及X86环境.
+然后进行系统编译依赖的准备操作，如下基于Radxa开发板及X86环境。
 
 #### 2.1.1 Radxa开发板
-参考:https://docs.radxa.com/rock5/rock5b/app-development/rtsp?target=ffmpeg
+参考: https://docs.radxa.com/rock5/rock5b/app-development/rtsp?target=ffmpeg
 安装ffmpeg-rockchip依赖库,执行以下命令:
 
 ```bash
 sudo apt-get update
 sudo apt-get install build-essential cmake git libdrm-dev librga-dev librockchip-mpp-dev libsdl2*-dev libx264-dev libx265-dev pkg-config
 ```
-注意如果无法访问源安装依赖库，请下载源码安装，参考:https://github.com/nyanmisaka/ffmpeg-rockchip/wiki/Compilation
+注意如果无法访问源安装依赖库，请下载源码安装，参考: https://github.com/nyanmisaka/ffmpeg-rockchip/wiki/Compilation
 
 安装ffmpeg-rockchip:
 
@@ -89,10 +88,17 @@ source install/setup.bash
 
 ### 3.2 运行ros_metas节点
 使用以下命令运行ros_metas节点
-
+1. 非零拷贝模式
 ```bash
 ros2 run metas_ros ms_node
 ```
+2. 零拷贝模式(仅限ros2 humble版本)
+```bash
+export FASTRTPS_DEFAULT_PROFILES_FILE=ros_metas/conf/shm_fastdds.xml
+export RMW_FASTRTPS_USE_QOS_FROM_XML=1
+ros2 run metas_ros ms_node
+```
+
 ### 3.3 查看发布的传感器数据
 
 #### 3.3.1 通过界面来查看传感器数据
@@ -134,7 +140,6 @@ ros2 bag record /topic1 /topic2
 ```
 2. 回放
 录制完成后，可以通过以下命令进行回放:
-sh
 ```bash
 ros2 bag play <bagfile>
 ```
@@ -144,20 +149,32 @@ ros2 bag play <bagfile>
 可通过一些工具进行查看，例如rviz
 对于录制和回放的更详细内容可参照ROS2文档的录制回放章节.
 
-
 ## 4. 特性
 ### 4.1  依赖
 ros2_metas节点依赖以下关键的库和软件包:
 
 #### 4.1.1 ROS2 Core 库:
 * rclcpp: ROS2 C++ 客户端库, 提供ROS2的核心功能.
-* sensor_msgs: 传感器的标准数据消息，包括images and point clouds.
-* std_msgs: ROS2的标准消息.
+* std_msgs: ROS2的标准消息。
 #### 4.1.2 robosense_msgs:
-为H.265定制的ROS2消息，用于传输metaS传感器的图像数据。
+为H.265定制的ROS2消息及零拷贝模式消息，用于传输metaS传感器的数据。
+
 ### 4.2 Topic 
 1. camera RGB image topic:/rs_camera/rgb
+   * 零拷贝模式msg（自定义）: robosense_msgs/msg/RsImage
+   * 非零拷贝模式msg（ros2通用）: sensor_msgs/msg/Image
 2. lidar topic:/rs_lidar/points
+   * 零拷贝模式msg（自定义）: robosense_msgs/msg/RsPointCloud
+   * 非零拷贝模式msg（ros2通用）: sensor_msgs/msg/PointCloud2
 3. imu topic:/rs_imu
 4. camera h265 video topic:/rs_camera/compressed
 
+## 5. 使用限制
+和ROS2的publisher/subscriber数据传输方式相比，使用零拷贝传输存在以下限制：
+* 当前仅支持Humble版本，推荐QOS Reliability使用RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT（建议直接使用rclcpp::SensorDataQoS()设置QOS）
+* QOS History只支持KEEPLAST，不支持KEEPALL，且KEEPLAST不能设置太大，有内存限制，目前设置为最大占用256M内存
+* 传输的消息大小是固定的，即消息的sizeof值是不变的，不能包含可变长度类型数据，例如：string，动态数组
+* RMW_QOS_POLICY_RELIABILITY_RELIABLE在多种通信方式下存在稳定性问题
+* 只能用于同一设备进程间通信，不可跨设备传输
+* publisher消息要先获取再赋值发送，且要判断是否获取成功
+* subscriber收到的消息有效期仅限回调函数中，不能在回调函数之外使用
