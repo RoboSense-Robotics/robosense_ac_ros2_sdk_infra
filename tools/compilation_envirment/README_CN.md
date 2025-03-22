@@ -50,7 +50,7 @@ ARM编译镜像：​ arm_sdk_compile_humble_based:latest
 使用 `start_container.sh` 脚本管理容器：
 
 ```bash
-cd src/super_sensor_sdk/sdk_infra/tools/cross_compile
+cd src/ac_studio/robosense_ac_ros2_sdk_infra/tools/compilation_envirment
 ./start_container.sh [选项]
 ```
 
