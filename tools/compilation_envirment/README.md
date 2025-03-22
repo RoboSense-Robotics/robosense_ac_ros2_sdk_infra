@@ -48,7 +48,7 @@ Download the image package from CDN (~3GB) Extract and load the Docker image Ver
 Use the start_container.sh script to manage containers:
 
 ```bash
-cd src/super_sensor_sdk/sdk_infra/tools/cross_compile
+cd src/ac_studio/robosense_ac_ros2_sdk_infra/tools/compilation_envirment
 ./start_container.sh [option]
 ```
 
