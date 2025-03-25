@@ -1,0 +1,9 @@
+<launch>
+  <!-- Launch codec_node -->
+  <node name="codec_node" pkg="ac_codec" type="codec_node" output="screen">
+    <!-- Add parameters or remappings here if needed -->
+  </node>
+  
+  <!-- rviz -->
+  <!-- <node pkg="rviz" name="rviz" type="rviz" args="-d $(find ac_driver)/rviz/rviz.rviz" /> -->
+</launch>

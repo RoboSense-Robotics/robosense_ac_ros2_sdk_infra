@@ -1,6 +1,6 @@
 # ros2_metas
 
-[中文文档](https://github.com/RoboSense-Robotics/robosense_ac_ros2_sdk_infra/blob/main/modules/ros_metas/README_CN.md)
+[中文文档](https://github.com/RoboSense-Robotics/robosense_ac_ros2_sdk_infra/blob/main/modules/ac_driver/README_CN.md)
 
 ## 1. Introduction
 
@@ -70,30 +70,30 @@ colcon build
 
 # Or build individually
 colcon build --symlink-install --packages-select robosense_msgs
-colcon build --symlink-install --packages-select ros2_codec
-colcon build --symlink-install --packages-select ros_metas
+colcon build --symlink-install --packages-select ac_codec
+colcon build --symlink-install --packages-select ac_driver
 ```
 
 ## 3. Usage
 
-### 3.1 Prepare the ros_metas environment
+### 3.1 Prepare the ac_driver environment
 Refresh the bash profile of the workspace to ensure that the environment configuration of the components is ok.
 Run the following commands:
 ```bash
 source install/setup.bash
 ```
 
-### 3.2 Run the ros_metas Node
-The ros_metas node can be run using the ros2 run command.
+### 3.2 Run the ac_driver Node
+The ac_driver node can be run using the ros2 run command.
 1. Non-zero-copy mode
 ```bash
-ros2 run metas_ros ms_node
+ros2 run ac_driver ms_node
 ```
 2. Zero-copy mode (only for ROS2 Humble)
 ```bash
-export FASTRTPS_DEFAULT_PROFILES_FILE=ros_metas/conf/shm_fastdds.xml
+export FASTRTPS_DEFAULT_PROFILES_FILE=ac_driver/conf/shm_fastdds.xml
 export RMW_FASTRTPS_USE_QOS_FROM_XML=1
-ros2 run metas_ros ms_node
+ros2 run ac_driver ms_node
 ```
 
 ### 3.3 View the published sensor data.

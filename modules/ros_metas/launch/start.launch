@@ -1,9 +1,0 @@
-<launch>
-  <!-- Launch ms_node -->
-  <node name="ms_node" pkg="metas_ros" type="ms_node" output="screen">
-    <!-- Add parameters or remappings here if needed -->
-  </node>
-  
-  <!-- rviz -->
-  <!-- <node pkg="rviz" name="rviz" type="rviz" args="-d $(find metas_ros)/rviz/rviz.rviz" /> -->
-</launch>

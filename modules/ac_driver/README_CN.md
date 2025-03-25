@@ -1,6 +1,6 @@
 # ros2_metas
 
-[README](https://github.com/RoboSense-Robotics/robosense_ac_ros2_sdk_infra/blob/main/modules/ros_metas/README.md)
+[README](https://github.com/RoboSense-Robotics/robosense_ac_ros2_sdk_infra/blob/main/modules/ac_driver/README.md)
 
 ## 1. 简介
 
@@ -72,8 +72,8 @@ colcon build
 
 #或者单独编译
 colcon build --symlink-install --packages-select robosense_msgs
-colcon build --symlink-install --packages-select ros2_codec
-colcon build --symlink-install --packages-select ros_metas
+colcon build --symlink-install --packages-select ac_codec
+colcon build --symlink-install --packages-select ac_driver
 ```
 ## 3. 运行
 
@@ -90,13 +90,13 @@ source install/setup.bash
 使用以下命令运行ros_metas节点
 1. 非零拷贝模式
 ```bash
-ros2 run metas_ros ms_node
+ros2 run ac_driver ms_node
 ```
 2. 零拷贝模式(仅限ros2 humble版本)
 ```bash
-export FASTRTPS_DEFAULT_PROFILES_FILE=ros_metas/conf/shm_fastdds.xml
+export FASTRTPS_DEFAULT_PROFILES_FILE=ac_driver/conf/shm_fastdds.xml
 export RMW_FASTRTPS_USE_QOS_FROM_XML=1
-ros2 run metas_ros ms_node
+ros2 run ac_driver ms_node
 ```
 
 ### 3.3 查看发布的传感器数据

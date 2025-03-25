@@ -8,8 +8,8 @@ NC='\e[0m' # No Color
 
 # Define fixed parameters
 ROS_VERSION="humble"
-ARM_IMAGE="arm_sdk_compile_humble_based:latest"
-X86_IMAGE="x86_sdk_compile_humble_based:latest"
+ARM_IMAGE="arm_sdk_compile_humble_based"
+X86_IMAGE="x86_sdk_compile_humble_based"
 ARM_CONTAINER="arm_sdk_compile_humble_based"
 X86_CONTAINER="x86_sdk_compile_humble_based"
 

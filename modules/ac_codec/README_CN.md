@@ -1,6 +1,6 @@
-# ros2_codec
+# ac_codec
 
-[README](https://github.com/RoboSense-Robotics/robosense_ac_ros2_sdk_infra/blob/main/modules/ros2_codec/README.md)
+[README](https://github.com/RoboSense-Robotics/robosense_ac_ros2_sdk_infra/blob/main/modules/ac_codec/README.md)
 
 ## 1. 简介
 
@@ -41,6 +41,6 @@ source install/setup.bash
 使用以下命令运行ros2_codec节点
 
 ```bash
-ros2 run ros2_codec codec_node
+ros2 run ac_codec codec_node
 ```
 

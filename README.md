@@ -6,13 +6,13 @@ It serves as the basic ROS2 software repository for the AC1 sensor and includes 
 
 - AC1 ROS2 driver
 
-It is used to receive sensor data, integrate and publish it to other nodes. Sensor data includes camera, LiDAR, and IMU. For details, see "[modules/ros_metas/README.md](https://github.com/RoboSense-Robotics/robosense_ac_ros2_sdk_infra/blob/main/modules/ros_metas/README.md)".
+It is used to receive sensor data, integrate and publish it to other nodes. Sensor data includes camera, LiDAR, and IMU. For details, see "[modules/ac_driver/README.md](https://github.com/RoboSense-Robotics/robosense_ac_ros2_sdk_infra/blob/main/modules/ac_driver/README.md)".
 
 
 
-- ros2_codec camera message codec
+- ac_codec camera message codec
 
-ros2_codec is the ROS middleware node that decodes H265, which is used to receive H265 data and decode it into RGB data for release. For details, please check "[modules/ros2_codec/README.md](https://github.com/RoboSense-Robotics/robosense_ac_ros2_sdk_infra/blob/main/modules/ros2_codec/README.md)" in the current directory.
+ac_codec is the ROS middleware node that decodes H265, which is used to receive H265 data and decode it into RGB data for release. For details, please check "[modules/ac_codec/README.md](https://github.com/RoboSense-Robotics/robosense_ac_ros2_sdk_infra/blob/main/modules/ac_codec/README.md)" in the current directory.
 
 
 

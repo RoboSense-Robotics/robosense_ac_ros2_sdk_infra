@@ -8,7 +8,7 @@ import os
 def generate_launch_description():
 
     rviz_config_file = os.path.join(
-        get_package_share_directory('metas_ros'),
+        get_package_share_directory('ac_driver'),
         'rviz',
         'rviz2_config.rviz'
     )
@@ -16,13 +16,13 @@ def generate_launch_description():
     return LaunchDescription([
 
         Node(
-            package='metas_ros',
+            package='ac_driver',
             executable='ms_node',
             name='ms_node',
             output='screen'
         ),
         # Node(
-        #     package='metas_ros',
+        #     package='ac_driver',
         #     executable='point_tf_node',
         #     name='point_tf_node',
         #     output='screen'

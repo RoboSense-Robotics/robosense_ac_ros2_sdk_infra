@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.5)
-project(ros2_codec)
+project(ac_codec)
 
 ## Compile as C++14, supported in ROS Kinetic and newer
 add_compile_options(-std=c++17)

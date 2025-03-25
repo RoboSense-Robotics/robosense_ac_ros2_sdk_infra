@@ -1,0 +1,9 @@
+<launch>
+  <!-- Launch ms_node -->
+  <node name="ms_node" pkg="ac_driver" type="ms_node" output="screen">
+    <!-- Add parameters or remappings here if needed -->
+  </node>
+  
+  <!-- rviz -->
+  <!-- <node pkg="rviz" name="rviz" type="rviz" args="-d $(find ac_driver)/rviz/rviz.rviz" /> -->
+</launch>

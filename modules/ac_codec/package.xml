@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>metas_ros</name>
+  <name>ac_codec</name>
   <version>1.0.0</version>
-  <description>The metas_ros package</description>
-  <maintainer email="skyler.zhao@robosense.cn">sti</maintainer>
+  <description>The ac_codec package</description>
+  <maintainer email="jacky.zeng@robosense.cn">sti</maintainer>
   <license>BSD</license>
 
   <buildtool_depend condition="$ROS_VERSION == 1">catkin</buildtool_depend>
