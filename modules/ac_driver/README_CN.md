@@ -4,7 +4,7 @@
 
 ## 1. 简介
 
-ros2_metas是MetaS传感器驱动的ROS中间件节点,用于接收传感器数据，整合和发布给其它节点使用。传感器数据包括摄像头，激光雷达和IMU。
+ac_driver是AC传感器驱动的ROS中间件节点,用于接收传感器数据，整合和发布给其它节点使用。传感器数据包括摄像头，激光雷达和IMU。
 
 ## 2. 构建
 
@@ -86,8 +86,8 @@ colcon build --symlink-install --packages-select ac_driver
 source install/setup.bash
 ```
 
-### 3.2 运行ros_metas节点
-使用以下命令运行ros_metas节点
+### 3.2 运行ac_driver节点
+使用以下命令运行ac_driver节点
 1. 非零拷贝模式
 ```bash
 ros2 run ac_driver ms_node
@@ -120,9 +120,9 @@ rviz2
 IMU数据选择IMU.
 
 4. 选择Topic:
-选择ros2_metas节点发布的topic.
+选择ac_driver节点发布的topic.
 
-参照4.2 Topic章节选择topic显示，可使rviz显示ros2_metas节点发布的传感器数据.
+参照4.2 Topic章节选择topic显示，可使rviz显示ac_driver节点发布的传感器数据.
 
 #### 3.3.2 录制数据并查看
 可通过ROS2的录制工具进行数据录制并回放查看数据，按以下步骤操作:
@@ -151,13 +151,13 @@ ros2 bag play <bagfile>
 
 ## 4. 特性
 ### 4.1  依赖
-ros2_metas节点依赖以下关键的库和软件包:
+ac_driver节点依赖以下关键的库和软件包:
 
 #### 4.1.1 ROS2 Core 库:
 * rclcpp: ROS2 C++ 客户端库, 提供ROS2的核心功能.
 * std_msgs: ROS2的标准消息。
 #### 4.1.2 robosense_msgs:
-为H.265定制的ROS2消息及零拷贝模式消息，用于传输metaS传感器的数据。
+为H.265定制的ROS2消息及零拷贝模式消息，用于传输AC传感器的数据。
 
 ### 4.2 Topic 
 1. camera RGB image topic:/rs_camera/rgb

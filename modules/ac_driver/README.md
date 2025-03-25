@@ -4,7 +4,7 @@
 
 ## 1. Introduction
 
-ac_driver is the ROS middleware node for the metaS driver, which is used to receive sensor data from metaS, integrate the data, and then publish it for use by other nodes. This includes data from three sources: camera, lidar, and IMU.
+ac_driver is the ROS middleware node for the AC driver, which is used to receive sensor data from AC, integrate the data, and then publish it for use by other nodes. This includes data from three sources: camera, lidar, and IMU.
 
 ## 2. Installation
 
@@ -156,7 +156,7 @@ The ac_driver node relies on several key libraries and packages to function prop
 * sensor_msgs: Provides standard message types for common sensor data, such as images and point clouds.
 * std_msgs: Provides standard message types for basic data types, such as integers, floats, and strings.
 #### 4.1.2 robosense_msgs:
-This custom ROS2 package defines the message formats for H.265 compressed images and other sensor data specific to the metaS sensors. It is essential for the ac_driver node to interpret and publish the sensor data correctly.
+This custom ROS2 package defines the message formats for H.265 compressed images and other sensor data specific to the AC sensors. It is essential for the ac_driver node to interpret and publish the sensor data correctly.
 
 ### 4.2 Topic 
 1. camera RGB image topic:/rs_camera/rgb
