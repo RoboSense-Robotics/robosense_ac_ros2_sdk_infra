@@ -1,10 +1,10 @@
-# ros2_metas
+# ac_driver
 
 [中文文档](https://github.com/RoboSense-Robotics/robosense_ac_ros2_sdk_infra/blob/main/modules/ac_driver/README_CN.md)
 
 ## 1. Introduction
 
-ros2_metas is the ROS middleware node for the metaS driver, which is used to receive sensor data from metaS, integrate the data, and then publish it for use by other nodes. This includes data from three sources: camera, lidar, and IMU.
+ac_driver is the ROS middleware node for the metaS driver, which is used to receive sensor data from metaS, integrate the data, and then publish it for use by other nodes. This includes data from three sources: camera, lidar, and IMU.
 
 ## 2. Installation
 
@@ -118,9 +118,9 @@ For point cloud data from lidar, add the PointCloud2 display.
 For IMU data, add the IMU display.
 
 4. Select Topics:
-Configure the displays to subscribe to the appropriate topics published by the ros2_metas node.
+Configure the displays to subscribe to the appropriate topics published by the ac_driver node.
 
-By following these steps, you can view the published sensor data from the ros2_metas node using graphical interfaces like rviz.
+By following these steps, you can view the published sensor data from the ac_driver node using graphical interfaces like rviz.
 
 #### 3.3.2 Recording and Viewing Data
 You can use the built-in ROS2 bag recording tool to record and then play back the data for viewing. Here are the steps:
@@ -149,14 +149,14 @@ For more detailed instructions on recording and playing back data, you can refer
 
 ## 4. Features
 ### 4.1  Dependencies
-The ros2_metas node relies on several key libraries and packages to function properly. Here is a detailed list of the dependencies:
+The ac_driver node relies on several key libraries and packages to function properly. Here is a detailed list of the dependencies:
 
 #### 4.1.1 ROS2 Core Libraries:
 * rclcpp: The ROS2 C++ client library, providing the core functionality for ROS2 nodes.
 * sensor_msgs: Provides standard message types for common sensor data, such as images and point clouds.
 * std_msgs: Provides standard message types for basic data types, such as integers, floats, and strings.
 #### 4.1.2 robosense_msgs:
-This custom ROS2 package defines the message formats for H.265 compressed images and other sensor data specific to the metaS sensors. It is essential for the ros2_metas node to interpret and publish the sensor data correctly.
+This custom ROS2 package defines the message formats for H.265 compressed images and other sensor data specific to the metaS sensors. It is essential for the ac_driver node to interpret and publish the sensor data correctly.
 
 ### 4.2 Topic 
 1. camera RGB image topic:/rs_camera/rgb

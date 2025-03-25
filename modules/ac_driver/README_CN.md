@@ -1,4 +1,4 @@
-# ros2_metas
+# ac_driver
 
 [README](https://github.com/RoboSense-Robotics/robosense_ac_ros2_sdk_infra/blob/main/modules/ac_driver/README.md)
 
