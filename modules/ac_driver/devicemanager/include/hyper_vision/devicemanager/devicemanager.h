@@ -24,6 +24,7 @@
 #include <queue>
 #include <set>
 #include <string>
+#include <atomic>
 
 // 定义点云类型
 using RsPointXYZIRT = PointXYZIRT;
@@ -160,7 +161,7 @@ private:
   std::map<std::string, DeviceInfoItem> _devices_map;
 
   bool _enable_debug;
-  std::atomic_bool _is_stoping_;
+  std::atomic<bool> _is_stoping_;
 
 private:
   const uint32_t VENDOR_ID = 0x3840;
@@ -182,7 +183,7 @@ private:
   std::condition_variable _imuQueueCond;
 
   // 线程停止标志
-  std::atomic_bool _stopProcessingThreads;
+  std::atomic<bool> _stopProcessingThreads;
 
   // 消息处理线程
   std::thread _pointCloudProcessingThread;
