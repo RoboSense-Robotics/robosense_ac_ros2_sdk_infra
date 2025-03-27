@@ -103,6 +103,19 @@ if(TARGET_ARCH STREQUAL "RK3588")
   target_link_libraries(codec_node ${BZ2_LIBRARY})
   find_library(XCB_LIBRARY xcb)
   target_link_libraries(codec_node ${XCB_LIBRARY})
+
+  find_library(ASOUND_LIBRARY asound REQUIRED)
+  find_library(SNDIO_LIBRARY sndio REQUIRED)
+  find_library(X11_LIBRARY NAMES X11)
+  find_library(XV_LIBRARY NAMES Xv)
+  find_library(XEXT_LIBRARY NAMES Xext)
+  target_link_libraries(codec_node
+    ${ASOUND_LIBRARY}
+    ${SNDIO_LIBRARY}
+    ${X11_LIBRARY}
+    ${XEXT_LIBRARY}
+    ${XV_LIBRARY}
+  )
 elseif(TARGET_ARCH STREQUAL "X86" OR TARGET_ARCH STREQUAL "ARM")
   target_link_libraries(codec_node ${OpenCV_LIBS})
 endif()

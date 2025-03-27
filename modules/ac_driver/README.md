@@ -35,7 +35,7 @@ install ffmpeg-rockchip:
 ```bash
 git clone https://github.com/nyanmisaka/ffmpeg-rockchip
 pushd ffmpeg-rockchip/
-./configure --prefix=/usr --enable-gpl --enable-version3 --enable-libdrm --enable-rkmpp --enable-rkrga --enable-libx264 --enable-libx265 --enable-ffplay
+./configure --prefix=/usr --enable-gpl --enable-version3 --enable-libdrm --enable-rkmpp --enable-rkrga --enable-libx264 --enable-libx265 --enable-ffplay --enable-alsa --enable-sndio --enable-x11grab --enable-xv --extra-libs="-lasound -lx264 -lsndio -lX11 -lXv" --extra-cflags="-I/usr/include/alsa -I/usr/local/include" --extra-ldflags="-L/usr/lib/aarch64-linux-gnu -L/usr/local/lib"
 make -j$(nproc)
 sudo make install
 popd

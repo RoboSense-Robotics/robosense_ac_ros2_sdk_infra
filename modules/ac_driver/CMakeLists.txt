@@ -195,10 +195,21 @@ if(TARGET_ARCH STREQUAL "RK3588")
   target_link_libraries(ms_node ${DRM_LIBRARY})
   find_library(BZ2_LIBRARY bz2)
   target_link_libraries(ms_node ${BZ2_LIBRARY})
-  find_library(BZ2_LIBRARY bz2)
-  target_link_libraries(ms_node ${BZ2_LIBRARY})
   find_library(XCB_LIBRARY xcb)
   target_link_libraries(ms_node ${XCB_LIBRARY})
+
+  find_library(ASOUND_LIBRARY asound REQUIRED)
+  find_library(SNDIO_LIBRARY sndio REQUIRED)
+  find_library(X11_LIBRARY NAMES X11)
+  find_library(XV_LIBRARY NAMES Xv)
+  find_library(XEXT_LIBRARY NAMES Xext)
+  target_link_libraries(ms_node
+    ${ASOUND_LIBRARY}
+    ${SNDIO_LIBRARY}
+    ${X11_LIBRARY}
+    ${XEXT_LIBRARY}
+    ${XV_LIBRARY}
+  )
 elseif(TARGET_ARCH STREQUAL "X86" OR TARGET_ARCH STREQUAL "ARM")
     target_include_directories(ms_node PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../ac_codec/include)
     target_link_libraries(ms_node ${OpenCV_LIBS})
