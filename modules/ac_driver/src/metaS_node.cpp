@@ -49,6 +49,9 @@ extern "C" {
 #else
 #include "colorcodec.h"
 #include "jpegcoder.h"
+#include <thread>
+#include <condition_variable>
+#include <queue>
 #endif
 
 #ifdef ROS_FOUND
@@ -67,7 +70,7 @@ extern "C" {
 #include <std_msgs/msg/string.hpp>
 #endif
 
-#define DEBUG_STATISTICS
+// #define DEBUG_STATISTICS
 //#define DEBUG_TO_FILE
 
 class MSPublisher
@@ -243,6 +246,8 @@ public:
     nv12_image_size =
         robosense::color::ColorCodec::NV12ImageSize(imageWidth, imageHeight);
 
+    // 启动 JPEG 处理线程
+    jpeg_processing_thread_ = std::thread(&MSPublisher::jpegProcessingLoop, this);
 #endif // RK3588
 
 #ifdef DEBUG_TO_FILE
@@ -288,6 +293,18 @@ public:
     if (device_manager_ptr) {
       device_manager_ptr->stop();
     }
+
+#ifndef RK3588
+    // 停止 JPEG 处理线程
+    {
+      std::lock_guard<std::mutex> lock(jpeg_mutex_);
+      stop_jpeg_thread_ = true;
+      jpeg_condition_.notify_all();
+    }
+    if (jpeg_processing_thread_.joinable()) {
+      jpeg_processing_thread_.join();
+    }
+#endif
   };
 
 private:
@@ -378,7 +395,11 @@ private:
 #ifdef RK3588
       h265_handle(msgPtr);
 #else
-      jpeg_handle(msgPtr);
+      {
+        std::lock_guard<std::mutex> lock(jpeg_mutex_);
+        jpeg_queue_.push(msgPtr);
+        jpeg_condition_.notify_one();
+      }
 #endif // RK3588
     }
   }
@@ -931,6 +952,38 @@ private:
     rclcpp::shutdown();
 #endif // ROS_ROS2_FOUND
   }
+
+#ifndef RK3588
+  void jpegProcessingLoop() {
+    while (true) {
+      std::shared_ptr<robosense::lidar::ImageData> frame;
+      {
+        std::unique_lock<std::mutex> lock(jpeg_mutex_);
+        jpeg_condition_.wait(lock, [this] {
+          return !jpeg_queue_.empty() || stop_jpeg_thread_;
+        });
+
+        if (stop_jpeg_thread_ && jpeg_queue_.empty()) {
+          break;
+        }
+
+        frame = jpeg_queue_.front();
+        jpeg_queue_.pop();
+      }
+
+      if (frame) {
+        jpeg_handle(frame);
+      }
+    }
+  }
+
+  // JPEG 处理线程相关成员变量
+  std::thread jpeg_processing_thread_;
+  std::mutex jpeg_mutex_;
+  std::condition_variable jpeg_condition_;
+  std::queue<std::shared_ptr<robosense::lidar::ImageData>> jpeg_queue_;
+  bool stop_jpeg_thread_ = false;
+#endif // RK3588
 
 #ifdef DEBUG_STATISTICS
   void topic_point_callback(const sensor_msgs::msg::PointCloud2 msg) const {

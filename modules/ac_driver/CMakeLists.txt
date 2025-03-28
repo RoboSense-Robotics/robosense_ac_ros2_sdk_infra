@@ -3,7 +3,17 @@ project(ac_driver)
 
 ## Compile as C++14, supported in ROS Kinetic and newer
 add_compile_options(-std=c++17)
+set(CMAKE_BUILD_TYPE "Release")
 
+add_compile_options(
+    -O3
+    -ffast-math
+    -flto
+    -fexceptions
+    -pthread
+)
+set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -ggdb")
+set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
 execute_process(
   COMMAND bash -c "cat /proc/cpuinfo | grep 'Rockchip RK3588' | uniq | cut -d ':' -f 2"
   OUTPUT_VARIABLE CPU_MODEL
