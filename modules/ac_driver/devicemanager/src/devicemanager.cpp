@@ -27,21 +27,24 @@ DeviceManager::DeviceManager() {
   _stopProcessingThreads = false;
 
   // 启动消息处理线程
-  _pointCloudProcessingThread = std::thread(&DeviceManager::processPointCloudQueue, this);
+  _pointCloudProcessingThread =
+      std::thread(&DeviceManager::processPointCloudQueue, this);
   _imageProcessingThread = std::thread(&DeviceManager::processImageQueue, this);
   _imuProcessingThread = std::thread(&DeviceManager::processImuQueue, this);
 }
 
-DeviceManager::~DeviceManager() {
-    stop();
-}
+DeviceManager::~DeviceManager() { stop(); }
 
-bool DeviceManager::init(const bool isEnableDebug) {
+bool DeviceManager::init(const int image_input_fps, const int imu_input_fps,
+                         const bool isEnableDebug) {
   if (_inited) {
     return true;
   }
   _is_stoping_ = false;
   _enable_debug = isEnableDebug;
+  _image_input_fps = image_input_fps;
+  _imu_input_fps = imu_input_fps;
+
   RS_INFOL << "DeviceManager: _enable_debug = " << _enable_debug << RS_REND;
 
   int res;
@@ -87,19 +90,6 @@ bool DeviceManager::init(const bool isEnableDebug) {
 }
 
 int DeviceManager::stop() {
-  _stopProcessingThreads = true;
-  _pointCloudQueueCond.notify_one();
-  if (_pointCloudProcessingThread.joinable()) {
-      _pointCloudProcessingThread.join();
-  }
-  _imageQueueCond.notify_one();
-  if (_imageProcessingThread.joinable()) {
-      _imageProcessingThread.join();
-  }
-  _imuQueueCond.notify_one();
-  if (_imuProcessingThread.joinable()) {
-      _imuProcessingThread.join();
-  }
   if (!_inited) {
     return 0;
   }
@@ -130,6 +120,22 @@ int DeviceManager::stop() {
   if (_usb_ctx) {
     libusb_exit(_usb_ctx);
     _usb_ctx = nullptr;
+  }
+
+  if (_stopProcessingThreads == false) {
+    _stopProcessingThreads = true;
+    _pointCloudQueueCond.notify_all();
+    if (_pointCloudProcessingThread.joinable()) {
+      _pointCloudProcessingThread.join();
+    }
+    _imageQueueCond.notify_all();
+    if (_imageProcessingThread.joinable()) {
+      _imageProcessingThread.join();
+    }
+    _imuQueueCond.notify_all();
+    if (_imuProcessingThread.joinable()) {
+      _imuProcessingThread.join();
+    }
   }
 
   _inited = false;
@@ -210,9 +216,16 @@ int DeviceManager::openDevice(const std::string &device_uuid) {
   driverParam.input_type = robosense::lidar::InputType::USB;
   driverParam.lidar_type = robosense::lidar::RS_AC1;
   driverParam.input_param.enable_image = true; // enable image output
+#if defined(RK3588) || defined(JETSON_ORIN) // 当前只针对rk3588对nv12转码做了优化，默认出nv12
   driverParam.input_param.image_format =
       robosense::lidar::FRAME_FORMAT_NV12; // 设置为RGB24/NV12/BGR24
+#else
+  driverParam.input_param.image_format =
+    robosense::lidar::FRAME_FORMAT_RGB24; // 设置为RGB24/NV12/BGR24
+#endif
   driverParam.input_param.device_uuid = iterMap->second.uuid;
+  driverParam.input_param.image_fps = _image_input_fps;
+  driverParam.input_param.imu_fps = _imu_input_fps;
 
   bool isSuccess = driver_ptr->init(driverParam);
   if (!isSuccess) {
@@ -404,63 +417,63 @@ DeviceManager::localGetImuDataCallback() {
 void DeviceManager::localRunPointCloudCallback(
     const std::shared_ptr<PointCloudT<RsPointXYZIRT>> &msgPtr,
     const std::string &uuid) {
-    if (_is_stoping_.load()) {
-        return;
-    }
+  if (_is_stoping_.load()) {
+    return;
+  }
 
-    {
-        std::lock_guard<std::mutex> lg(_devices_map_mtx);
-        if (!(_devices_map.find(uuid) != _devices_map.end() &&
-              !_devices_map[uuid].is_pause)) {
-            return;
-        }
+  {
+    std::lock_guard<std::mutex> lg(_devices_map_mtx);
+    if (!(_devices_map.find(uuid) != _devices_map.end() &&
+          !_devices_map[uuid].is_pause)) {
+      return;
     }
-    if (msgPtr) {
-        std::lock_guard<std::mutex> lg(_pointCloudQueueMutex);
-        _pointCloudQueue.push(std::make_pair(msgPtr, uuid));
-        _pointCloudQueueCond.notify_one(); // 通知等待的线程
-    }
+  }
+  if (msgPtr) {
+    std::lock_guard<std::mutex> lg(_pointCloudQueueMutex);
+    _pointCloudQueue.push(std::make_pair(msgPtr, uuid));
+    _pointCloudQueueCond.notify_one(); // 通知等待的线程
+  }
 }
 
 void DeviceManager::localRunImageCallback(
     const std::shared_ptr<robosense::lidar::ImageData> &msgPtr,
     const std::string &uuid) {
-    if (_is_stoping_.load()) {
-        return;
+  if (_is_stoping_.load()) {
+    return;
+  }
+  {
+    std::lock_guard<std::mutex> lg(_devices_map_mtx);
+    if (!(_devices_map.find(uuid) != _devices_map.end() &&
+          !_devices_map[uuid].is_pause)) {
+      return;
     }
-    {
-        std::lock_guard<std::mutex> lg(_devices_map_mtx);
-        if (!(_devices_map.find(uuid) != _devices_map.end() &&
-              !_devices_map[uuid].is_pause)) {
-            return;
-        }
-    }
-    if (msgPtr) {
-        std::lock_guard<std::mutex> lg(_imageQueueMutex);
-        _imageQueue.push(std::make_pair(msgPtr, uuid));
-        _imageQueueCond.notify_one(); // 通知等待的线程
-    }
+  }
+  if (msgPtr) {
+    std::lock_guard<std::mutex> lg(_imageQueueMutex);
+    _imageQueue.push(std::make_pair(msgPtr, uuid));
+    _imageQueueCond.notify_one(); // 通知等待的线程
+  }
 }
 
 void DeviceManager::localRunImuCallback(
     const std::shared_ptr<robosense::lidar::ImuData> &msgPtr,
     const std::string &uuid) {
-    if (_is_stoping_.load()) {
-        return;
-    }
+  if (_is_stoping_.load()) {
+    return;
+  }
 
-    {
-        std::lock_guard<std::mutex> lg(_devices_map_mtx);
-        if (!(_devices_map.find(uuid) != _devices_map.end() &&
-              !_devices_map[uuid].is_pause)) {
-            return;
-        }
+  {
+    std::lock_guard<std::mutex> lg(_devices_map_mtx);
+    if (!(_devices_map.find(uuid) != _devices_map.end() &&
+          !_devices_map[uuid].is_pause)) {
+      return;
     }
-    if (msgPtr) {
-        std::lock_guard<std::mutex> lg(_imuQueueMutex);
-        _imuQueue.push(std::make_pair(msgPtr, uuid));
-        _imuQueueCond.notify_one(); // 通知等待的线程
-    }
+  }
+  if (msgPtr) {
+    std::lock_guard<std::mutex> lg(_imuQueueMutex);
+    _imuQueue.push(std::make_pair(msgPtr, uuid));
+    _imuQueueCond.notify_one(); // 通知等待的线程
+  }
 }
 
 int DeviceManager::findDevices(
@@ -596,57 +609,61 @@ void DeviceManager::hotplugWorkThread() {
 }
 
 void DeviceManager::processPointCloudQueue() {
-    while (!_stopProcessingThreads) {
-        std::pair<std::shared_ptr<PointCloudT<RsPointXYZIRT>>, std::string> msgPair;
-        {
-            std::unique_lock<std::mutex> lock(_pointCloudQueueMutex);
-            _pointCloudQueueCond.wait(lock, [this] {
-                return !_pointCloudQueue.empty() || _stopProcessingThreads;
-            });
-            if (_stopProcessingThreads) break;
-            msgPair = _pointCloudQueue.front();
-            _pointCloudQueue.pop();
-        }
-        if (msgPair.first && _pc_cb) {
-            _pc_cb(msgPair.first, msgPair.second);
-        }
+  while (!_stopProcessingThreads) {
+    std::pair<std::shared_ptr<PointCloudT<RsPointXYZIRT>>, std::string> msgPair;
+    {
+      std::unique_lock<std::mutex> lock(_pointCloudQueueMutex);
+      _pointCloudQueueCond.wait(lock, [this] {
+        return !_pointCloudQueue.empty() || _stopProcessingThreads;
+      });
+      if (_stopProcessingThreads)
+        break;
+      msgPair = _pointCloudQueue.front();
+      _pointCloudQueue.pop();
     }
+    if (msgPair.first && _pc_cb) {
+      _pc_cb(msgPair.first, msgPair.second);
+    }
+  }
 }
 
 void DeviceManager::processImageQueue() {
-    while (!_stopProcessingThreads) {
-        std::pair<std::shared_ptr<robosense::lidar::ImageData>, std::string> msgPair;
-        {
-            std::unique_lock<std::mutex> lock(_imageQueueMutex);
-            _imageQueueCond.wait(lock, [this] {
-                return !_imageQueue.empty() || _stopProcessingThreads;
-            });
-            if (_stopProcessingThreads) break;
-            msgPair = _imageQueue.front();
-            _imageQueue.pop();
-        }
-        if (msgPair.first && _image_cb) {
-            _image_cb(msgPair.first, msgPair.second);
-        }
+  while (!_stopProcessingThreads) {
+    std::pair<std::shared_ptr<robosense::lidar::ImageData>, std::string>
+        msgPair;
+    {
+      std::unique_lock<std::mutex> lock(_imageQueueMutex);
+      _imageQueueCond.wait(lock, [this] {
+        return !_imageQueue.empty() || _stopProcessingThreads;
+      });
+      if (_stopProcessingThreads)
+        break;
+      msgPair = _imageQueue.front();
+      _imageQueue.pop();
     }
+    if (msgPair.first && _image_cb) {
+      _image_cb(msgPair.first, msgPair.second);
+    }
+  }
 }
 
 void DeviceManager::processImuQueue() {
-    while (!_stopProcessingThreads) {
-        std::pair<std::shared_ptr<robosense::lidar::ImuData>, std::string> msgPair;
-        {
-            std::unique_lock<std::mutex> lock(_imuQueueMutex);
-            _imuQueueCond.wait(lock, [this] {
-                return !_imuQueue.empty() || _stopProcessingThreads;
-            });
-            if (_stopProcessingThreads) break;
-            msgPair = _imuQueue.front();
-            _imuQueue.pop();
-        }
-        if (msgPair.first && _imu_cb) {
-            _imu_cb(msgPair.first, msgPair.second);
-        }
+  while (!_stopProcessingThreads) {
+    std::pair<std::shared_ptr<robosense::lidar::ImuData>, std::string> msgPair;
+    {
+      std::unique_lock<std::mutex> lock(_imuQueueMutex);
+      _imuQueueCond.wait(lock, [this] {
+        return !_imuQueue.empty() || _stopProcessingThreads;
+      });
+      if (_stopProcessingThreads)
+        break;
+      msgPair = _imuQueue.front();
+      _imuQueue.pop();
     }
+    if (msgPair.first && _imu_cb) {
+      _imu_cb(msgPair.first, msgPair.second);
+    }
+  }
 }
 
 } // namespace device

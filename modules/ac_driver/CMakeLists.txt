@@ -14,30 +14,35 @@ add_compile_options(
 )
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -ggdb")
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
-execute_process(
-  COMMAND bash -c "cat /proc/cpuinfo | grep 'Rockchip RK3588' | uniq | cut -d ':' -f 2"
-  OUTPUT_VARIABLE CPU_MODEL
-  OUTPUT_STRIP_TRAILING_WHITESPACE
-)
 
-if(CPU_MODEL STREQUAL " Rockchip RK3588")
-  message(STATUS "Detected RK3588 chip")
-  set(TARGET_ARCH "RK3588")
-  add_definitions(-DRK3588)
-  add_definitions(-DSUPPORT_H265)
-else()
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm|aarch64)$")
+  file(READ "/proc/device-tree/model" COMPATIBLE_CONTENT)
+  execute_process(
+    COMMAND bash -c "cat /proc/cpuinfo | grep 'Rockchip RK3588' | uniq | cut -d ':' -f 2"
+    OUTPUT_VARIABLE CPU_MODEL
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+  )
+  if(COMPATIBLE_CONTENT MATCHES "Jetson")
+    message(STATUS "Detected Orin platform")
+    set(TARGET_ARCH "JETSON_ORIN")
+    add_definitions(-DJETSON_ORIN)
+  elseif(CPU_MODEL STREQUAL " Rockchip RK3588")
+    message(STATUS "Detected RK3588 chip")
+    set(TARGET_ARCH "RK3588")
+    add_definitions(-DRK3588)
+    add_definitions(-DSUPPORT_H265)
+  else()
+  message(STATUS "cur model: ${COMPATIBLE_CONTENT}")
     set(TARGET_ARCH "ARM")
     add_definitions(-DARM_ARCH)
-    add_definitions(-DSUPPORT_H265)
+  endif()
 elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|i686)$")
-    set(TARGET_ARCH "X86")
-    add_definitions(-DX86_ARCH)
-    include_directories(/usr/include/opencv4/)
+  set(TARGET_ARCH "X86")
+  add_definitions(-DX86_ARCH)
+  include_directories(/usr/include/opencv4/)
 else()
-    message(STATUS "Unknown target architecture: ${CMAKE_SYSTEM_PROCESSOR}")
-    set(TARGET_ARCH "UNKNOWN")
-endif()
+  message(STATUS "Unknown target architecture: ${CMAKE_SYSTEM_PROCESSOR}")
+  set(TARGET_ARCH "UNKNOWN")
 endif()
 
 #av_codec#
@@ -52,40 +57,6 @@ find_library(SWRESAMPLE_LIBRARY swresample)
 find_library(LZMA_LIBRARY lzma)
 find_library(M_LIBRARY m)
 find_library(Z_LIBRARY z)
-
-# #ROS#
-# find_package(roscpp 1.12 QUIET)
-
-# if(roscpp_FOUND)
-
-#   message(=============================================================)
-#   message("-- ROS Found. ROS Support is turned On.")
-#   message(=============================================================)
-
-#   add_definitions(-DROS_FOUND)
-
-#   find_package(catkin REQUIRED COMPONENTS
-#     roscpp
-#     std_msgs
-#     sensor_msgs
-#   )
-
-#   # Specify additional locations of header files
-#   include_directories(
-#     ${catkin_INCLUDE_DIRS}
-#   )
-
-#   catkin_package(
-#     CATKIN_DEPENDS roscpp std_msgs sensor_msgs
-#   )
-
-# else(roscpp_FOUND)
-
-#   message(=============================================================)
-#   message("-- ROS Not Found. ROS Support is turned Off.")
-#   message(=============================================================)
-
-# endif(roscpp_FOUND)
 
 #ROS2#
 find_package(rclcpp QUIET)
@@ -150,27 +121,6 @@ include_directories(${PROJECT_SOURCE_DIR}/devicemanager)
 include_directories(${PROJECT_SOURCE_DIR}/devicemanager/include/)
 add_subdirectory(devicemanager)
 
-# #Ros#
-# if(roscpp_FOUND)
-
-#   add_executable(ms_node src/metaS_node.cpp)
-#   target_link_libraries(ms_node ${SS_LIBRARY} ${catkin_LIBRARIES})
-#   # 链接FFmpeg库到目标
-#   target_link_libraries(ms_node ${AVCODEC_LIBRARIES})
-#   target_link_libraries(ms_node ${AVFORMAT_LIBRARIES})
-#   target_link_libraries(ms_node ${AVUTIL_LIBRARIES})
-
-
-#   install(TARGETS ms_node
-#     RUNTIME DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
-#   )
-
-#   install(DIRECTORY launch rviz
-#     DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}
-#   )
-
-# endif(roscpp_FOUND)
-
 #Ros2#
 if(rclcpp_FOUND)
 
@@ -219,6 +169,27 @@ if(TARGET_ARCH STREQUAL "RK3588")
     ${X11_LIBRARY}
     ${XEXT_LIBRARY}
     ${XV_LIBRARY}
+  )
+elseif(TARGET_ARCH STREQUAL "JETSON_ORIN")
+  # 添加 cuda_nv12_remap_norm 子模块
+  add_subdirectory(cuda_nv12_remap_norm)
+
+  include_directories(/usr/local/cuda/include
+    ./src) # 添加 CUDA 头文件路径
+  target_include_directories(ms_node PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../ac_codec/include)
+  find_library(CUDA_LIBRARY cuda HINTS /usr/lib/aarch64-linux-gnu/tegra REQUIRED)
+  find_library(CUDART_LIBRARY cudart HINTS /usr/local/cuda/lib64 REQUIRED)
+  if(NOT CUDA_LIBRARY OR NOT CUDART_LIBRARY)
+    message(FATAL_ERROR "Failed to find required libraries for Orin platform: CUDA_LIBRARY or CUDART_LIBRARY")
+  endif()
+  message(STATUS "Found CUDA_LIBRARY: ${CUDA_LIBRARY}")
+  message(STATUS "Found CUDART_LIBRARY: ${CUDART_LIBRARY}")
+  target_link_directories(ms_node PRIVATE ./lib)
+  target_link_libraries(ms_node 
+    ${CUDA_LIBRARY}
+    ${CUDART_LIBRARY}
+    ${OpenCV_LIBS}
+    cuda_nv12_remap_norm
   )
 elseif(TARGET_ARCH STREQUAL "X86" OR TARGET_ARCH STREQUAL "ARM")
     target_include_directories(ms_node PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../ac_codec/include)

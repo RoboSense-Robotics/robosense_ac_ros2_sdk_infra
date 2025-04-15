@@ -123,22 +123,19 @@ inline void DecoderRSAC1<T_PointCloud>::decodeImuPkt(const uint8_t* packet, size
     if(this->imuDataPtr_ && this->cb_imu_data_)
     {
       auto data = packet;
-      // x = -z; y = -x;  z = y;
-      this->imuDataPtr_->linear_acceleration_x = -(int16_t)((uint16_t)data[15] << 8 | data[14]) / (32768.0 / 16.0) * 9.80665;
-      this->imuDataPtr_->linear_acceleration_y = -(int16_t)((uint16_t)data[11] << 8 | data[10]) / (32768.0 / 16.0) * 9.80665;
-      this->imuDataPtr_->linear_acceleration_z = (int16_t)((uint16_t)data[13] << 8 | data[12]) / (32768.0 / 16.0) * 9.80665;
-      this->imuDataPtr_->angular_velocity_x = -(int16_t)((uint16_t)data[21] << 8 | data[20]) / (32768.0 / 2000.0) / 180 * M_PI;
-      this->imuDataPtr_->angular_velocity_y = -(int16_t)((uint16_t)data[17] << 8 | data[16]) / (32768.0 / 2000.0) / 180 * M_PI;
-      this->imuDataPtr_->angular_velocity_z = (int16_t)((uint16_t)data[19] << 8 | data[18]) / (32768.0 / 2000.0) / 180 * M_PI;
-      // ->temperature = (int16_t)((uint16_t)data[23] << 8 | data[22]) / 128.0 + 25.0;
+      memcpy(&this->imuDataPtr_->linear_acceleration_x, data + 10, sizeof(float));
+      memcpy(&this->imuDataPtr_->linear_acceleration_y, data + 14, sizeof(float));
+      memcpy(&this->imuDataPtr_->linear_acceleration_z, data + 18, sizeof(float));
+      memcpy(&this->imuDataPtr_->angular_velocity_x, data + 22, sizeof(float));
+      memcpy(&this->imuDataPtr_->angular_velocity_y, data + 26, sizeof(float));
+      memcpy(&this->imuDataPtr_->angular_velocity_z, data + 30, sizeof(float));
       struct timespec time;
-      memcpy(&time, data + 24, sizeof(struct timespec));
+      memcpy(&time, data + 38, sizeof(struct timespec));
       this->imuDataPtr_->timestamp = time.tv_sec + time.tv_nsec * 1e-9;
       
       this->imuDataPtr_->state = true;
       this->cb_imu_data_();
-
-    } 
+    }
 }
 
 template <typename T_PointCloud>

@@ -61,7 +61,33 @@ sudo apt-get update
 sudo apt-get install libavformat-dev libavdevice-dev libavcodec-dev
 ```
 
-#### 2.1.3 Build
+#### 2.1.3 Jetson Orin Platform
+
+When building and running on the Jetson Orin platform, install dependency library, for example:
+
+```shell
+sudo apt-get update
+sudo apt-get install libavformat-dev libavdevice-dev libavcodec-dev
+```
+
+ensure that the CUDA environment is properly installed. Follow these steps:
+
+1. Install the necessary CUDA libraries:
+```bash
+sudo apt-get update
+sudo apt-get install nvidia-cuda-toolkit
+```
+
+2. Verify the CUDA installation:
+```bash
+nvcc --version
+```
+
+3. Ensure that ROS2 and OpenCV dependencies are installed.
+
+4. Follow the instructions in section 2.1.3 to build the project.
+
+#### 2.1.4 Build
 Then, enter the modules directory, Run the following commands to compile:
 
 ```bash
@@ -83,18 +109,44 @@ Run the following commands:
 source install/setup.bash
 ```
 
+**Note:** Before starting the driver, ensure that the `ROS_DOMAIN_ID` is set correctly. Failure to set this may result in abnormal driver processes or data publishing delays. You can set it as follows:
+```bash
+export ROS_DOMAIN_ID=<your_domain_id>
+```
+Replace `<your_domain_id>` with the appropriate domain ID for your ROS 2 environment.
+
 ### 3.2 Run the ac_driver Node
 The ac_driver node can be run using the ros2 run command.
 1. Non-zero-copy mode
 ```bash
-ros2 run ac_driver ms_node
+ros2 run ac_driver ms_node [--ros-args --param image_input_fps:=30 --param imu_input_fps:=200 --param enable_jpeg:=false]
+or 
+ros2 launch ac_driver start.py 
 ```
 2. Zero-copy mode (only for ROS2 Humble)
 ```bash
 export FASTRTPS_DEFAULT_PROFILES_FILE=ac_driver/conf/shm_fastdds.xml
 export RMW_FASTRTPS_USE_QOS_FROM_XML=1
-ros2 run ac_driver ms_node
+ros2 run ac_driver ms_node [--ros-args --param image_input_fps:=30 --param imu_input_fps:=200 --param enable_jpeg:=false]
+or 
+export FASTRTPS_DEFAULT_PROFILES_FILE=ac_driver/conf/shm_fastdds.xml
+export RMW_FASTRTPS_USE_QOS_FROM_XML=1
+ros2 launch ac_driver start.py
 ```
+
+#### Parameter Description
+- `enable_jpeg`: Whether to enable JPEG image compression. The default value is `false` (disabled). When enabled, it compresses images using JPEG to reduce bandwidth usage but increases CPU usage. You can enable it as follows:
+  ```bash
+  ros2 run ac_driver ms_node [--ros-args --param enable_jpeg:=true]
+  ```
+
+The sensor supports setting the frame rates of images and Imu, where the frame rates supported by images include: 10Hz/15Hz/30Hz, The frame rates supported by Imu include: 100Hz/200Hz, default camera frame rate is 30Hz, The Imu frame rate is 200Hz, Depending on the method of starting the node, as mentioned in 1/2 above, if starting through the **ros2 run** command, parameters can be passed in through the **-- param** command; If using the **ros2 luanch** startup command, modify the startup parameter settings in the **start.launch** file.
+
+#### Format Description
+
+- At present, image transcoding optimization has been done on rk3588 and jetson orin platforms, and the default driver is directly exported to nv12 and released into rgb24 format images through hardware;
+
+- Other platforms use rgb24 by default and adopt cpu jepg compression. The compression function considers the impact of performance. The compression function is disabled by default and can be turned on by enable-jpeg switch.
 
 ### 3.3 View the published sensor data.
 
@@ -169,13 +221,27 @@ This custom ROS2 package defines the message formats for H.265 compressed images
 4. camera h265 video topic:/rs_camera/compressed
 
 ## 5. Limitations
+
+### 5.1 Zero-Copy Usage Limitations
+
 Compared to the ROS2 publisher/subscriber data transmission method, using zero-copy transmission has the following limitations:
-* Currently only supports Humble version, it is recommended to use RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT for QOS Reliability (it is recommended to directly use rclcpp::SensorDataQoS() to set QOS)
-* QOS History only supports KEEPLAST, does not support KEEPALL, and KEEPLAST cannot be set too large, there is a memory limit, currently set to a maximum of 256M memory
-* The size of the transmitted message is fixed, that is, the sizeof value of the message does not change, and it cannot contain variable-length data types, such as: string, dynamic array
-* RMW_QOS_POLICY_RELIABILITY_RELIABLE has stability issues under multiple communication methods
-* Can only be used for inter-process communication on the same device, cannot be transmitted across devices
-* The publisher message must be obtained first and then assigned to send, and it must be judged whether it is successfully obtained
-* The message received by the subscriber is only valid in the callback function and cannot be used outside the callback function
+* Currently only supports the Humble version. It is recommended to use RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT for QOS Reliability (it is recommended to directly use `rclcpp::SensorDataQoS()` to set QOS).
+* QOS History only supports KEEPLAST, does not support KEEPALL, and KEEPLAST cannot be set too large due to memory limitations. Currently, it is set to a maximum of 256MB.
+* The size of the transmitted message is fixed, i.e., the `sizeof` value of the message does not change. It cannot contain variable-length data types, such as strings or dynamic arrays.
+* RMW_QOS_POLICY_RELIABILITY_RELIABLE has stability issues under multiple communication methods.
+* Can only be used for inter-process communication on the same device and cannot be transmitted across devices.
+* The publisher message must be obtained first and then assigned before sending. It must also check whether it was successfully obtained.
+* The message received by the subscriber is only valid within the callback function and cannot be used outside the callback function.
+
+### 5.2 Performance
+
+* For images at 30fps, the CPU usage on Orin Nano is measured at 105%. If JPEG compression is disabled, CPU usage can be reduced by 40-50%. Disable it as needed by commenting out the following code:
+```cpp
+{
+    std::lock_guard<std::mutex> lock(jpeg_mutex_);
+    jpeg_queue_.push(msgPtr);
+    jpeg_condition_.notify_one();
+}
+```
 
 
