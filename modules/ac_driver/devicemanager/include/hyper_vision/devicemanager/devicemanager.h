@@ -20,11 +20,11 @@
 #include "libusb/libusb.h"
 #include "rs_driver/api/lidar_driver.hpp"
 #include "rs_driver/msg/pcl_point_cloud_msg.hpp"
+#include <atomic>
 #include <functional>
 #include <queue>
 #include <set>
 #include <string>
-#include <atomic>
 
 // 定义点云类型
 using RsPointXYZIRT = PointXYZIRT;
@@ -102,7 +102,8 @@ public:
 
   ~DeviceManager();
 
-  bool init(const bool isEnableDebug = false);
+  bool init(const int image_input_fps = 30, const int imu_input_fps = 200,
+            const bool isEnableDebug = false);
 
   int stop();
 
@@ -163,14 +164,22 @@ private:
   bool _enable_debug;
   std::atomic<bool> _is_stoping_;
 
+  int _image_input_fps; 
+  int _imu_input_fps; 
+
 private:
   const uint32_t VENDOR_ID = 0x3840;
   const uint32_t PRODUCT_ID = 0x1010;
 
   // 消息处理队列
-  std::queue<std::pair<std::shared_ptr<PointCloudT<RsPointXYZIRT>>, std::string>> _pointCloudQueue;
-  std::queue<std::pair<std::shared_ptr<robosense::lidar::ImageData>, std::string>> _imageQueue;
-  std::queue<std::pair<std::shared_ptr<robosense::lidar::ImuData>, std::string>> _imuQueue;
+  std::queue<
+      std::pair<std::shared_ptr<PointCloudT<RsPointXYZIRT>>, std::string>>
+      _pointCloudQueue;
+  std::queue<
+      std::pair<std::shared_ptr<robosense::lidar::ImageData>, std::string>>
+      _imageQueue;
+  std::queue<std::pair<std::shared_ptr<robosense::lidar::ImuData>, std::string>>
+      _imuQueue;
 
   // 队列互斥锁
   std::mutex _pointCloudQueueMutex;
@@ -189,7 +198,6 @@ private:
   std::thread _pointCloudProcessingThread;
   std::thread _imageProcessingThread;
   std::thread _imuProcessingThread;
-
 };
 
 } // namespace device

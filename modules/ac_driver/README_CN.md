@@ -63,7 +63,33 @@ sudo apt-get update
 sudo apt-get install libavformat-dev libavdevice-dev libavcodec-dev
 ```
 
-#### 2.1.3 编译
+#### 2.1.3 Jetson Orin 平台
+
+在Jetson Orin平台上构建和运行时，安装依赖库,如下示例:
+
+```bash
+sudo apt-get update
+sudo apt-get install libavformat-dev libavdevice-dev libavcodec-dev
+```
+
+请确保CUDA环境已正确安装。以下是步骤：
+
+1. 安装必要的CUDA库：
+```bash
+sudo apt-get update
+sudo apt-get install nvidia-cuda-toolkit
+```
+
+2. 验证CUDA安装：
+```bash
+nvcc --version
+```
+
+3. 确保已安装ROS2和OpenCV的相关依赖。
+
+4. 按照2.1.3节中的说明进行项目构建。
+
+#### 2.1.4 编译
 然后进入modules目录, 使用以下命令进行编译:
 
 ```bash
@@ -86,18 +112,50 @@ colcon build --symlink-install --packages-select ac_driver
 source install/setup.bash
 ```
 
+**注意:** 启动驱动前，请确保正确设置 `ROS_DOMAIN_ID`，否则可能导致驱动进程异常或数据发布延迟异常。可以通过以下命令设置：
+```bash
+export ROS_DOMAIN_ID=<your_domain_id>
+```
+将 `<your_domain_id>` 替换为您ROS 2环境中适当的域ID。
+
 ### 3.2 运行ac_driver节点
 使用以下命令运行ac_driver节点
 1. 非零拷贝模式
 ```bash
-ros2 run ac_driver ms_node
+ros2 run ac_driver ms_node [--ros-args --param image_input_fps:=30 --param imu_input_fps:=200 --param enable_jpeg:=false]
+或 
+ros2 launch ac_driver start.py 
 ```
 2. 零拷贝模式(仅限ros2 humble版本)
 ```bash
 export FASTRTPS_DEFAULT_PROFILES_FILE=ac_driver/conf/shm_fastdds.xml
 export RMW_FASTRTPS_USE_QOS_FROM_XML=1
-ros2 run ac_driver ms_node
+ros2 run ac_driver ms_node [--ros-args --param image_input_fps:=30 --param imu_input_fps:=200 --param enable_jpeg:=false]
+或
+export FASTRTPS_DEFAULT_PROFILES_FILE=ac_driver/conf/shm_fastdds.xml
+export RMW_FASTRTPS_USE_QOS_FROM_XML=1
+ros2 launch ac_driver start.py
 ```
+
+#### 参数说明
+- `enable_jpeg`: 是否启用JPEG图像压缩，默认值为`false`（关闭）。启用后会增加CPU使用率。可以通过以下方式启用：
+  ```bash
+  ros2 run ac_driver ms_node [--ros-args --param enable_jpeg:=true]
+  ```
+
+对于Jetson Orin平台，请确保CUDA环境已正确配置后再运行节点。
+
+传感器支持设置图像和Imu的帧率，其中图像支持的帧率包含: 10Hz/15Hz/30Hz, Imu支持的帧率包含: 100Hz/200Hz，默认相机帧率为30Hz, Imu帧率为200Hz, 
+
+根据启动节点的方法不同，如果前述1/2所述，如果通过ros2 run命令启动，则可以通过--param命令传入参数； 如果通过ros2 luanch 启动命令，则修改start.launch文件中的启动参数设置。
+
+#### 格式说明
+
+- 当前已对rk3588、jetson orin平台对图像做了转码优化，默认驱动直接出nv12，通过硬件转成rgb24格式图像发布；
+
+- 其他平台默认直出rgb24，并采用cpu jepg压缩，压缩功能考虑到性能的影响，默认关闭压缩功能，可以通过enable-jpeg开关打开。
+
+
 
 ### 3.3 查看发布的传感器数据
 
@@ -169,7 +227,8 @@ ac_driver节点依赖以下关键的库和软件包:
 3. imu topic:/rs_imu
 4. camera h265 video topic:/rs_camera/compressed
 
-## 5. 使用限制
+## 5. 注意事项
+### 5.1 零拷贝使用限制
 和ROS2的publisher/subscriber数据传输方式相比，使用零拷贝传输存在以下限制：
 * 当前仅支持Humble版本，推荐QOS Reliability使用RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT（建议直接使用rclcpp::SensorDataQoS()设置QOS）
 * QOS History只支持KEEPLAST，不支持KEEPALL，且KEEPLAST不能设置太大，有内存限制，目前设置为最大占用256M内存
@@ -178,3 +237,13 @@ ac_driver节点依赖以下关键的库和软件包:
 * 只能用于同一设备进程间通信，不可跨设备传输
 * publisher消息要先获取再赋值发送，且要判断是否获取成功
 * subscriber收到的消息有效期仅限回调函数中，不能在回调函数之外使用
+
+### 5.2 运行性能
+* 图像30fps在orin nano实测cpu占用为105，若取消jpeg压缩则可降低40~50%,可按需取消，取消方法：将以下代码注释掉：
+```cpp
+{
+    std::lock_guard<std::mutex> lock(jpeg_mutex_);
+    jpeg_queue_.push(msgPtr);
+    jpeg_condition_.notify_one();
+}
+```

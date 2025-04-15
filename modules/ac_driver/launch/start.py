@@ -19,7 +19,12 @@ def generate_launch_description():
             package='ac_driver',
             executable='ms_node',
             name='ms_node',
-            output='screen'
+            output='screen', 
+            parameters=[{
+                'image_input_fps': 30,
+                'imu_input_fps': 200,
+                'enable_jpeg': False,
+            }]
         ),
         # Node(
         #     package='ac_driver',

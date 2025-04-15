@@ -2,6 +2,12 @@
   <!-- Launch ms_node -->
   <node name="ms_node" pkg="ac_driver" type="ms_node" output="screen">
     <!-- Add parameters or remappings here if needed -->
+    <!-- Frame rate for image input, measured in frames per second -->
+    <param name="image_input_fps" value="30" />
+    <!-- Frame rate for IMU (Inertial Measurement Unit) input, measured in frames per second -->
+    <param name="imu_input_fps" value="200" />
+    <!-- Whether to enable JPEG image compression -->
+    <param name="enable_jpeg" value="false" />
   </node>
   
   <!-- rviz -->

@@ -69,7 +69,9 @@ Due to the large amount of data transmission of the device provided by Robosense
 - Step2: Run node: 
 
   ```shell
-  ros2 run ac_driver ms_node
+  ros2 run ac_driver ms_node [--ros-args --param image_input_fps:=30 --param imu_input_fps:=200 --param enable_jpeg:=false]
+  或 
+  ros2 launch ac_driver start.py 
   ```
 
 

@@ -89,7 +89,7 @@ bool InputUsb::init()
     return false;
   }
 
-  if(!_is_usb_300)
+  if(!_is_usb_300 && !input_param_.enable_usb200)
   {
     RS_ERROR << "USB mode is not USB_3.0!" << RS_REND;
     return false;
@@ -317,16 +317,6 @@ bool InputUsb::imageStreamInit()
     RS_ERROR << "Failed to open device: " << uvc_strerror(res) << RS_REND;
     return false;
   }
-
-  // const uvc_format_desc_t *format_desc = uvc_get_format_descs(_uvc_devh_image);
-  // const uvc_frame_desc_t *frame_desc = format_desc->frame_descs;
-
-  // if (frame_desc)
-  // {
-  //   _width = frame_desc->wWidth;
-  //   _height = frame_desc->wHeight;
-  //   _fps = 10000000 / frame_desc->dwDefaultFrameInterval;
-  // }
   
   return true;
 }
@@ -372,54 +362,6 @@ bool InputUsb::imageStreamStart()
     _uvc_ctx_image = nullptr;
     return false;
   }
-
-  // res = uvc_start_streaming(_uvc_devh_image, _uvc_ctrl_image, [](uvc_frame_t *frame, void *ptr)
-  //                                       {
-  //         auto* self = static_cast<InputUsb*>(ptr);
-
-  //         if ((frame->frame_format == UVC_FRAME_FORMAT_NV12 &&
-  //             frame->height * frame->width * 1.5 == frame->data_bytes) ||
-  //             ((frame->frame_format == UVC_FRAME_FORMAT_RGB || frame->frame_format == UVC_FRAME_FORMAT_BGR)
-  //             && frame->height * frame->width * 3 == frame->data_bytes))
-  //         {
-  //           int other_len = 2 + sizeof(uint16_t) + sizeof(double) + sizeof(frame->width) + sizeof(frame->height);
-  //           std::shared_ptr<Buffer> pkt = self->cb_get_pkt_2_(other_len + frame->data_bytes);
-
-  //           pkt->buf()[0] = 0xAA;
-  //           pkt->buf()[1] = 0x66;
-  //           switch (frame->frame_format)
-  //           {
-  //           case UVC_COLOR_FORMAT_NV12:
-  //             pkt->buf()[2] = (uint8_t)FRAME_FORMAT_NV12;
-  //             break;
-
-  //           case UVC_FRAME_FORMAT_BGR:
-  //             pkt->buf()[2] = (uint8_t)FRAME_FORMAT_BGR24;
-  //             break;
-
-  //           case UVC_FRAME_FORMAT_RGB:
-  //             pkt->buf()[2] = (uint8_t)FRAME_FORMAT_RGB24;
-  //             break;
-
-  //           case UVC_FRAME_FORMAT_YUYV:
-  //             pkt->buf()[2] = (uint8_t)FRAME_FORMAT_YUV422;
-  //             break;
-
-  //           default:
-  //             break;
-  //           }
-  //           double time = frame->capture_time.tv_sec + frame->capture_time.tv_usec * 1e-6;
-  //           memcpy(pkt->buf() + 2 + sizeof(uint16_t), &time, sizeof(time));
-  //           memcpy(pkt->buf() + 2 + sizeof(uint16_t) + sizeof(time), &frame->width, sizeof(frame->width));
-  //           memcpy(pkt->buf() + 2 + sizeof(uint16_t) + sizeof(time) + sizeof(frame->width), &frame->height, sizeof(frame->height));
-  //           memcpy(pkt->buf() + other_len, frame->data, frame->data_bytes);
-
-  //           pkt->setData(0, frame->data_bytes + other_len);
-  //           self->pushPacket2(pkt);
-  //         }
-
-  //         }, this, 0);
-
 
   res = uvc_start_streaming(_uvc_devh_image, _uvc_ctrl_image, 
           [](size_t size, void *ptr)-> uint8_t* 
@@ -542,36 +484,6 @@ bool InputUsb::pcStreamStart()
     _uvc_ctx_pc = nullptr;
     return false;
   }
-
-  // res = uvc_start_streaming(_uvc_devh_pc, _uvc_ctrl_pc, [](uvc_frame_t *frame, void *ptr)
-  //                                       {
-  //         auto* self = static_cast<InputUsb*>(ptr);
-
-  //         if (frame->data_bytes == DEPTH_DATA_BYTES)
-  //         {
-  //           int other_len = 2 + sizeof(double);
-  //           std::shared_ptr<Buffer> pkt = self->cb_get_pkt_3_(other_len + frame->data_bytes);
-
-  //           pkt->buf()[0] = 0xAA;
-  //           pkt->buf()[1] = 0x77;
-
-  //           uint8_t *data = static_cast<uint8_t *>(frame->data);
-  //           struct timeval capture_time;
-  //           capture_time.tv_sec = (uint64_t)data[0] << 40 | (uint64_t)data[1] << 32 |
-  //                     (uint32_t)data[2] << 24 | (uint32_t)data[3] << 16 |
-  //                     (uint16_t)data[4] << 8 | data[5];
-  //           capture_time.tv_usec = (uint32_t)data[6] << 24 | (uint32_t)data[7] << 16 |
-  //                      (uint16_t)data[8] << 8 | data[9];
-  //           double time = capture_time.tv_sec + capture_time.tv_usec * 1e-6;
-
-  //           memcpy(pkt->buf() + 2, &time, sizeof(time));
-  //           memcpy(pkt->buf() + other_len, frame->data, frame->data_bytes);
-
-  //           pkt->setData(0, frame->data_bytes + other_len);
-  //           self->pushPacket3(pkt);
-  //         }
-
-  //         }, this, 0);
 
   res = uvc_start_streaming(_uvc_devh_pc, _uvc_ctrl_pc, 
         [](size_t size, void *ptr)-> uint8_t* 
@@ -762,10 +674,21 @@ void InputUsb::recvPacket()
 
 bool InputUsb::imuStreamStart()
 {
-  if (!send_cmd(HID_REQ_IMU_UPLOAD_START))
+  if (input_param_.imu_fps == 200)
   {
-      RS_ERROR << "imu start error!!" << RS_REND;
-      return false;
+    if (!send_cmd(HID_REQ_IMU_UPLOAD_START_200HZ))
+    {
+        RS_ERROR << "imu start error!!" << RS_REND;
+        return false;
+    }
+  }
+  else
+  {
+    if (!send_cmd(HID_REQ_IMU_UPLOAD_START_100HZ))
+    {
+        RS_ERROR << "imu start error!!" << RS_REND;
+        return false;
+    }
   }
 
   return true;
@@ -789,62 +712,69 @@ bool InputUsb::send_cmd(hid_req req)
   int len = 0;
   switch (req)
   {
-  case HID_REQ_IMU_UPLOAD_START:
-  {
-    req_data[8] = 0x2E;
-    req_data[9] = 0x00;
-    req_data[10] = 0x01;
-    len = 11;
-    creat_frame_header(req_data, len);
-  }
-  break;
-
-  case HID_REQ_IMU_UPLOAD_STOP:
-  {
-    req_data[8] = 0x2E;
-    req_data[9] = 0x00;
-    req_data[10] = 0x00;
-    len = 11;
-    creat_frame_header(req_data, len);
-  }
-  break;
-
-  case HID_REQ_SYNC:
-  case HID_REQ_DELAY_RESP:
-  {
-    req_data[8] = 0x31;
-    if (req == HID_REQ_SYNC)
+    case HID_REQ_IMU_UPLOAD_START_100HZ:
+    case HID_REQ_IMU_UPLOAD_START_200HZ:
     {
-        req_data[9] = 0x00;
+      req_data[8] = 0x2E;
+      req_data[9] = 0x00;
+      req_data[10] = 0x02;
+      req_data[11] = 0x00;
+      if(req == HID_REQ_IMU_UPLOAD_START_200HZ)
+      {
+        req_data[11] = 0x01;
+      }
+      len = 12;
+      creat_frame_header(req_data, len);
     }
-    else if (req == HID_REQ_DELAY_RESP)
-    {
-        req_data[9] = 0x01;
-    }
-    struct timespec ts;
-
-    #ifdef PLATFORM_WINDOWS_MSVC
-      FILETIME ft;
-      unsigned __int64 tmpres = 0;
-      GetSystemTimeAsFileTime(&ft);
-      tmpres |= ft.dwHighDateTime;
-      tmpres <<= 32;
-      tmpres |= ft.dwLowDateTime;
-      tmpres -= 116444736000000000Ui64;
-      ts.tv_sec = (long)(tmpres / 10000000UL);
-      ts.tv_nsec = (long)(tmpres % 10000000UL) * 100;
-    #else
-      clock_gettime(CLOCK_REALTIME, &ts);
-    #endif
-
-    memcpy(req_data + 10, &ts, sizeof(struct timespec));
-    len = 26;
-    creat_frame_header(req_data, len);
-  }
-  break;
-
-  default:
     break;
+
+    case HID_REQ_IMU_UPLOAD_STOP:
+    {
+      req_data[8] = 0x2E;
+      req_data[9] = 0x00;
+      req_data[10] = 0x00;
+      req_data[11] = 0x00;
+      len = 12;
+      creat_frame_header(req_data, len);
+    }
+    break;
+
+    case HID_REQ_SYNC:
+    case HID_REQ_DELAY_RESP:
+    {
+      req_data[8] = 0x31;
+      if (req == HID_REQ_SYNC)
+      {
+          req_data[9] = 0x00;
+      }
+      else if (req == HID_REQ_DELAY_RESP)
+      {
+          req_data[9] = 0x01;
+      }
+      struct timespec ts;
+
+      #ifdef PLATFORM_WINDOWS_MSVC
+        FILETIME ft;
+        unsigned __int64 tmpres = 0;
+        GetSystemTimeAsFileTime(&ft);
+        tmpres |= ft.dwHighDateTime;
+        tmpres <<= 32;
+        tmpres |= ft.dwLowDateTime;
+        tmpres -= 116444736000000000Ui64;
+        ts.tv_sec = (long)(tmpres / 10000000UL);
+        ts.tv_nsec = (long)(tmpres % 10000000UL) * 100;
+      #else
+        clock_gettime(CLOCK_REALTIME, &ts);
+      #endif
+
+      memcpy(req_data + 10, &ts, sizeof(struct timespec));
+      len = 26;
+      creat_frame_header(req_data, len);
+    }
+    break;
+
+    default:
+      break;
   }
 
   res = libusb_interrupt_transfer(_devh, _hid_endpoint_out_num, req_data, len, &transfer_length, 100);
