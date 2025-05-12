@@ -35,7 +35,7 @@ Open a new terminal in the scripts folder in the current project directory, inst
 # Go to the script directory under source code
 cd /codepath/src/ac_driver/scripts
 # First access to a new device execution (only once required)
-sudo bash metaS_usb_permission.sh
+sudo bash AC_usb_permission.sh
 ```
 
 Wait for the installation, and restart the computer.

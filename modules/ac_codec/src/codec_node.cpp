@@ -144,9 +144,9 @@ public:
 #endif
 
 	        auto callback =
-		        [this](robosense_msgs::msg::RsCompressedImage msg) -> void
+		        [this](std::shared_ptr<const robosense_msgs::msg::RsCompressedImage> msg) -> void
 		        {
-			        decode_handle(msg);
+			        decode_handle(*msg);
 		        };
 	        sub_ = create_subscription<robosense_msgs::msg::RsCompressedImage>("/rs_camera/compressed", 10, callback);
 

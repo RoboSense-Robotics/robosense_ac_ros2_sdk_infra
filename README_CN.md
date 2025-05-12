@@ -35,7 +35,7 @@ ros2_codec是解码H265的ROS中间件节点,用于接收H265的数据，解码�
 # 进入源码下的脚本目录
 cd /codepath/src/ac_driver/scripts
 # 首次接入新设备执行（只需要一次）
-sudo bash metaS_usb_permission.sh
+sudo bash AC_usb_permission.sh
 ```
 
 等待安装，安装完成后，重启电脑即可。 

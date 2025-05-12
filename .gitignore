@@ -1,0 +1,6 @@
+tools/compilation_envirment/*.tar
+tools/compilation_envirment/*.tgz
+build
+log
+install
+.vscode 
