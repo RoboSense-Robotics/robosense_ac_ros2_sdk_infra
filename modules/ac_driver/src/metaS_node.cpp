@@ -133,15 +133,19 @@ public:
     ros::NodeHandle private_nh("~"); // parameter node
     private_nh.param<int32_t>("image_input_fps", image_input_fps, 30);
     private_nh.param<int32_t>("imu_input_fps", imu_input_fps, 200);
+    private_nh.param<bool>("enable_jpeg", enable_jpeg, false);
+    private_nh.param<int32_t>("jpeg_quality", jpeg_quality, 70);
 #elif ROS2_FOUND
     this->declare_parameter<int32_t>("image_input_fps", 30);
     this->declare_parameter<int32_t>("imu_input_fps", 200);
     this->declare_parameter<bool>("enable_jpeg", false);
+    this->declare_parameter<int32_t>("jpeg_quality", 70); 
 
     image_input_fps =
         this->get_parameter("image_input_fps").get_value<int32_t>();
     imu_input_fps = this->get_parameter("imu_input_fps").get_value<int32_t>();
     enable_jpeg = this->get_parameter("enable_jpeg").get_value<bool>();
+    jpeg_quality = this->get_parameter("jpeg_quality").get_value<int32_t>(); 
 #endif
     // check setting
     if (image_input_fps != 30 && image_input_fps != 15 &&
@@ -170,7 +174,8 @@ public:
     std::ostringstream ostr;
     ostr << "image_input_fps = " << image_input_fps
          << ", imu_input_fps = " << imu_input_fps
-          << ", enable_jpeg = " << enable_jpeg;
+         << ", enable_jpeg = " << enable_jpeg
+         << ", jpeg_quality = " << jpeg_quality; 
     logInfo(ostr.str());
 
 #ifdef ROS2_FOUND
@@ -334,6 +339,7 @@ cudaMemcpy(d_map_data, map.data, max_height * max_width * 2 * sizeof(int16_t), c
 #endif
       config.imageWidth = imageWidth;
       config.imageHeight = imageHeight;
+      config.jpegQuality = jpeg_quality; 
       config.gpuDeviceId = 0;
 
       int ret = jpegEncoder.init(config);
@@ -1142,6 +1148,7 @@ void rgb_handle(const std::shared_ptr<robosense::lidar::ImageData> &frame) {
   int image_input_fps = 30;
   int imu_input_fps = 200;
   bool enable_jpeg = false;
+  int jpeg_quality = 70; 
 
   // 编码相关
   int imageWidth;

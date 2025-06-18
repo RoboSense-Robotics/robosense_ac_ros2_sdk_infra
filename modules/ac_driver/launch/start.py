@@ -24,6 +24,7 @@ def generate_launch_description():
                 'image_input_fps': 30,
                 'imu_input_fps': 200,
                 'enable_jpeg': False,
+                'jpeg_quality': 70, 
             }]
         ),
         # Node(

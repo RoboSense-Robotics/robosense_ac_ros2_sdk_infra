@@ -8,6 +8,8 @@
     <param name="imu_input_fps" value="200" />
     <!-- Whether to enable JPEG image compression -->
     <param name="enable_jpeg" value="false" />
+    <!-- Whether to enable JPEG image compression quality -->
+    <param name="jpeg_quality" value="70" />
   </node>
   
   <!-- rviz -->

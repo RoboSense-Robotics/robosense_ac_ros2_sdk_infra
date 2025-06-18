@@ -119,7 +119,7 @@ Replace `<your_domain_id>` with the appropriate domain ID for your ROS 2 environ
 The ac_driver node can be run using the ros2 run command.
 1. Non-zero-copy mode
 ```bash
-ros2 run ac_driver ms_node [--ros-args --param image_input_fps:=30 --param imu_input_fps:=200 --param enable_jpeg:=false]
+ros2 run ac_driver ms_node [--ros-args --param image_input_fps:=30 --param imu_input_fps:=200 --param enable_jpeg:=false --param jpeg_quality:=70]
 or 
 ros2 launch ac_driver start.py 
 ```
@@ -127,7 +127,7 @@ ros2 launch ac_driver start.py
 ```bash
 export FASTRTPS_DEFAULT_PROFILES_FILE=ac_driver/conf/shm_fastdds.xml
 export RMW_FASTRTPS_USE_QOS_FROM_XML=1
-ros2 run ac_driver ms_node [--ros-args --param image_input_fps:=30 --param imu_input_fps:=200 --param enable_jpeg:=false]
+ros2 run ac_driver ms_node [--ros-args --param image_input_fps:=30 --param imu_input_fps:=200 --param enable_jpeg:=false --param jpeg_quality:=70]
 or 
 export FASTRTPS_DEFAULT_PROFILES_FILE=ac_driver/conf/shm_fastdds.xml
 export RMW_FASTRTPS_USE_QOS_FROM_XML=1
@@ -135,12 +135,19 @@ ros2 launch ac_driver start.py
 ```
 
 #### Parameter Description
+- `image_input_fps`: The image sensor output frame rates, where the frame rates supported by images include: 10Hz/15Hz/30Hz. The default value is 30
+  
+- `imu_input_fps`:  The imu sensor output frame rates, where the frame rates supported by Imu include: 100Hz/200Hz. The default value is 200
+  
 - `enable_jpeg`: Whether to enable JPEG image compression. The default value is `false` (disabled). When enabled, it compresses images using JPEG to reduce bandwidth usage but increases CPU usage. You can enable it as follows:
-  ```bash
+  
+  ```shell
   ros2 run ac_driver ms_node [--ros-args --param enable_jpeg:=true]
   ```
+  
+- `jpeg_quality`: The quality of JPEG image compression, default is 70
 
-The sensor supports setting the frame rates of images and Imu, where the frame rates supported by images include: 10Hz/15Hz/30Hz, The frame rates supported by Imu include: 100Hz/200Hz, default camera frame rate is 30Hz, The Imu frame rate is 200Hz, Depending on the method of starting the node, as mentioned in 1/2 above, if starting through the **ros2 run** command, parameters can be passed in through the **-- param** command; If using the **ros2 luanch** startup command, modify the startup parameter settings in the **start.launch** file.
+Depending on the method of starting the node, as mentioned in 1/2 above, if starting through the **ros2 run** command, parameters can be passed in through the **-- param** command; If using the **ros2 launch** startup command, modify the startup parameter settings in the **start.launch** file.
 
 #### Format Description
 

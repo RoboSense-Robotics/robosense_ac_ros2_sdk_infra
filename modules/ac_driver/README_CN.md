@@ -122,7 +122,7 @@ export ROS_DOMAIN_ID=<your_domain_id>
 使用以下命令运行ac_driver节点
 1. 非零拷贝模式
 ```bash
-ros2 run ac_driver ms_node [--ros-args --param image_input_fps:=30 --param imu_input_fps:=200 --param enable_jpeg:=false]
+ros2 run ac_driver ms_node [--ros-args --param image_input_fps:=30 --param imu_input_fps:=200 --param enable_jpeg:=false --param jpeg_quality:=70]
 或 
 ros2 launch ac_driver start.py 
 ```
@@ -130,7 +130,7 @@ ros2 launch ac_driver start.py
 ```bash
 export FASTRTPS_DEFAULT_PROFILES_FILE=ac_driver/conf/shm_fastdds.xml
 export RMW_FASTRTPS_USE_QOS_FROM_XML=1
-ros2 run ac_driver ms_node [--ros-args --param image_input_fps:=30 --param imu_input_fps:=200 --param enable_jpeg:=false]
+ros2 run ac_driver ms_node [--ros-args --param image_input_fps:=30 --param imu_input_fps:=200 --param enable_jpeg:=false --param jpeg_quality:=70]
 或
 export FASTRTPS_DEFAULT_PROFILES_FILE=ac_driver/conf/shm_fastdds.xml
 export RMW_FASTRTPS_USE_QOS_FROM_XML=1
@@ -138,16 +138,21 @@ ros2 launch ac_driver start.py
 ```
 
 #### 参数说明
+- `image_input_fps`: 图像支持的帧率包含: 10Hz/15Hz/30Hz, 默认为30Hz；
+
+- `imu_input_fps`: Imu支持的帧率包含: 100Hz/200Hz，默认为200Hz;
+
 - `enable_jpeg`: 是否启用JPEG图像压缩，默认值为`false`（关闭）。启用后会增加CPU使用率。可以通过以下方式启用：
-  ```bash
+
+  ```shell
   ros2 run ac_driver ms_node [--ros-args --param enable_jpeg:=true]
   ```
 
-对于Jetson Orin平台，请确保CUDA环境已正确配置后再运行节点。
+  对于Jetson Orin平台，请确保CUDA环境已正确配置后再运行节点。
 
-传感器支持设置图像和Imu的帧率，其中图像支持的帧率包含: 10Hz/15Hz/30Hz, Imu支持的帧率包含: 100Hz/200Hz，默认相机帧率为30Hz, Imu帧率为200Hz, 
+- `jpeg_quality`: JPEG图像压缩的质量，默认为70; 
 
-根据启动节点的方法不同，如果前述1/2所述，如果通过ros2 run命令启动，则可以通过--param命令传入参数； 如果通过ros2 luanch 启动命令，则修改start.launch文件中的启动参数设置。
+根据启动节点的方法不同，如果前述1/2所述，如果通过ros2 run命令启动，则可以通过--param命令传入参数； 如果通过ros2 launch 启动命令，则修改start.launch文件中的启动参数设置。
 
 #### 格式说明
 
