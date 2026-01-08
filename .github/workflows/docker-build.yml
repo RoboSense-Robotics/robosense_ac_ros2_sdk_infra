@@ -47,14 +47,26 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Compute sanitized Docker tag
+        id: tag
+        shell: bash
+        run: |
+          REF_NAME="${{ github.ref_name }}"
+          # replace "/" with "-", lowercase, and collapse any disallowed characters
+          SAFE_TAG="${REF_NAME//\//-}"
+          SAFE_TAG="${SAFE_TAG,,}"
+          SAFE_TAG="$(echo "$SAFE_TAG" | sed -E 's/[^a-z0-9._-]+/-/g; s/^-+|-+$//g')"
+          echo "tag=$SAFE_TAG" >> "$GITHUB_OUTPUT"
+          echo "Using tag: $SAFE_TAG"
+
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'pull_request' }}
+          push: true
           tags: |
-            ghcr.io/${{ github.repository }}:jazzy-latest
-            ghcr.io/${{ github.repository }}:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+            ghcr.io/metrolla-inc/robosense_ac_ros2_sdk_infra:${{ steps.tag.outputs.tag }}
+            ghcr.io/metrolla-inc/robosense_ac_ros2_sdk_infra:${{ github.sha }}
+          cache-from: type=registry,ref=ghcr.io/metrolla-inc/robosense_ac_ros2_sdk_infra:latest
+          cache-to: type=registry,ref=ghcr.io/metrolla-inc/robosense_ac_ros2_sdk_infra:latest,mode=max
