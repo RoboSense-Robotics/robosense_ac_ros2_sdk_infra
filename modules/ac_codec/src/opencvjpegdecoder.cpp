@@ -31,7 +31,7 @@ int OpencvJpegDecoder::init(const int imageWidth, const int imageHeight,
   return init();
 }
 
-int OpencvJpegDecoder::decode(unsigned char *jpegBuffer, int jpegBufferLen,
+int OpencvJpegDecoder::decode(const unsigned char *jpegBuffer, int jpegBufferLen,
                               unsigned char *rawBuffer, size_t &rawBufferLen) {
   if (!is_initial_) {
     return -1;

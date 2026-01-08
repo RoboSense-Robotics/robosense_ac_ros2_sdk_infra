@@ -7,11 +7,11 @@ YELLOW='\e[1;33m'
 NC='\e[0m' # No Color
 
 # Define fixed parameters
-ROS_VERSION="humble"
-ARM_IMAGE="arm_sdk_compile_humble_based"
-X86_IMAGE="x86_sdk_compile_humble_based"
-ARM_CONTAINER="arm_sdk_compile_humble_based"
-X86_CONTAINER="x86_sdk_compile_humble_based"
+ROS_VERSION="jazzy"
+ARM_IMAGE="robosense/ac-ros2-sdk:jazzy-arm64"
+X86_IMAGE="robosense/ac-ros2-sdk:jazzy-amd64"
+ARM_CONTAINER="ac_sdk_jazzy_arm64"
+X86_CONTAINER="ac_sdk_jazzy_amd64"
 
 # Get the absolute path of the current working directory
 WORKSPACE_DIR=$(pwd)/../../../../..
@@ -24,7 +24,7 @@ HOST_GROUP=$(getent group "${HOST_GID}" | cut -d: -f1)
 
 # Display help information
 show_help() {
-    echo -e "${GREEN}Super Sensor SDK Container Launch Tool (Humble Only)${NC}"
+    echo -e "${GREEN}Super Sensor SDK Container Launch Tool${NC}"
     echo "Usage: $0 [option]"
     echo ""
     echo "Options:"
@@ -51,40 +51,11 @@ check_docker() {
 # Check and load Docker image
 check_and_load_image() {
     local image_name=$1
-    local tgz_file="${image_name}.tgz"
-    local tar_file="${image_name}.tar"
-
-    # Check existing container
-    local container_name=$([ "$image_name" == "$ARM_IMAGE" ] && echo "$ARM_CONTAINER" || echo "$X86_CONTAINER")
-    if docker ps -a --format '{{.Names}}' | grep -q "^${container_name}$"; then
-        echo -e "${YELLOW}Container ${container_name} already exists${NC}"
-        return 0
-    fi
 
     # Check existing image
-    if docker image inspect "${image_name}" &> /dev/null; then
-        echo -e "${YELLOW}Image ${image_name} already exists${NC}"
-        return 0
-    fi
-
-    # Check for local tgz
-    if [ ! -f "${tgz_file}" ]; then
-        echo -e "${YELLOW}Downloading ${tgz_file}...${NC}"
-        if ! wget -q "https://cdn.robosense.cn/AC_wiki/${tgz_file}"; then
-            echo -e "${RED}Download failed: ${tgz_file}${NC}"
-            exit 1
-        fi
-    fi
-
-    # Extract and load
-    echo -e "${YELLOW}Loading ${tgz_file}...${NC}"
-    tar -zxf "${tgz_file}" || { echo -e "${RED}Extraction failed${NC}"; exit 1; }
-    
-    if [ -f "${tar_file}" ]; then
-        docker load -i "${tar_file}" || { echo -e "${RED}Docker load failed${NC}"; exit 1; }
-    else
-        echo -e "${RED}Missing tar file: ${tar_file}${NC}"
-        exit 1
+    if ! docker image inspect "${image_name}" &> /dev/null; then
+        echo -e "${YELLOW}Pulling image ${image_name}...${NC}"
+        docker pull "${image_name}" || { echo -e "${RED}Failed to pull ${image_name}${NC}"; exit 1; }
     fi
 }
 

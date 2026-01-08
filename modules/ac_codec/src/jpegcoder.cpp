@@ -31,7 +31,7 @@ int JpegCoder::init(const JpegCodesConfig &jpegCodesConfig) {
   return 0;
 }
 
-int JpegCoder::encode(unsigned char *yuv420Buffer, int yuv420BufferLen,
+int JpegCoder::encode(const unsigned char *yuv420Buffer, int yuv420BufferLen,
                       unsigned char *jpegBuffer, size_t &jpegBufferLen) {
   if (opencv_jpeg_encoder_ptr_ != nullptr) {
     int ret = opencv_jpeg_encoder_ptr_->encode(yuv420Buffer, yuv420BufferLen,
@@ -43,7 +43,7 @@ int JpegCoder::encode(unsigned char *yuv420Buffer, int yuv420BufferLen,
   return 0;
 }
 
-int JpegCoder::decode(unsigned char *yuv420Buffer, int yuv420BufferLen,
+int JpegCoder::decode(const unsigned char *yuv420Buffer, int yuv420BufferLen,
                       unsigned char *jpegBuffer, size_t &jpegBufferLen) {
   if (opencv_jpeg_decoder_ptr_ != nullptr) {
     int ret = opencv_jpeg_decoder_ptr_->decode(yuv420Buffer, yuv420BufferLen,

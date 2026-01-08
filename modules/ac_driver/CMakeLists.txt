@@ -1,8 +1,20 @@
 cmake_minimum_required(VERSION 3.5)
 project(ac_driver)
 
-## Compile as C++14, supported in ROS Kinetic and newer
-add_compile_options(-std=c++17)
+# Set CMake policies for newer versions
+if(POLICY CMP0069)
+  cmake_policy(SET CMP0069 NEW) # INTERPROCEDURAL_OPTIMIZATION
+endif()
+if(POLICY CMP0074)
+  cmake_policy(SET CMP0074 NEW) # find_package() uses <PackageName>_ROOT variables
+endif()
+if(POLICY CMP0144)
+  cmake_policy(SET CMP0144 NEW) # find_package() uses <PackageName>_ROOT variables
+endif()
+
+## Compile as C++17
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_BUILD_TYPE "Release")
 
 add_compile_options(
@@ -15,84 +27,104 @@ add_compile_options(
 set(CMAKE_CXX_FLAGS_DEBUG "-O0 -g -ggdb")
 set(CMAKE_INTERPROCEDURAL_OPTIMIZATION TRUE)
 
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm|aarch64)$")
-  file(READ "/proc/device-tree/model" COMPATIBLE_CONTENT)
-  execute_process(
-    COMMAND bash -c "cat /proc/cpuinfo | grep 'Rockchip RK3588' | uniq | cut -d ':' -f 2"
-    OUTPUT_VARIABLE CPU_MODEL
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-  )
-  if(COMPATIBLE_CONTENT MATCHES "Jetson")
-    message(STATUS "Detected Orin platform")
-    set(TARGET_ARCH "JETSON_ORIN")
+set(PLATFORM_TARGET "AUTO" CACHE STRING "Target platform (AUTO, JETSON_ORIN, RK3588, ARM, X86)")
+
+if(PLATFORM_TARGET STREQUAL "AUTO")
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm|aarch64)$")
+    if(EXISTS "/proc/device-tree/model")
+      file(READ "/proc/device-tree/model" COMPATIBLE_CONTENT)
+    else()
+      set(COMPATIBLE_CONTENT "")
+    endif()
+    execute_process(
+      COMMAND bash -c "cat /proc/cpuinfo | grep 'Rockchip RK3588' | uniq | cut -d ':' -f 2"
+      OUTPUT_VARIABLE CPU_MODEL
+      OUTPUT_STRIP_TRAILING_WHITESPACE
+    )
+    if(COMPATIBLE_CONTENT MATCHES "Jetson")
+      message(STATUS "Detected Orin platform")
+      set(TARGET_ARCH "JETSON_ORIN")
+    elseif(CPU_MODEL STREQUAL " Rockchip RK3588")
+      message(STATUS "Detected RK3588 chip")
+      set(TARGET_ARCH "RK3588")
+    else()
+      message(STATUS "cur model: ${COMPATIBLE_CONTENT}")
+      set(TARGET_ARCH "ARM")
+    endif()
+  elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|i686)$")
+    set(TARGET_ARCH "X86")
+  else()
+    message(STATUS "Unknown target architecture: ${CMAKE_SYSTEM_PROCESSOR}")
+    set(TARGET_ARCH "UNKNOWN")
+  endif()
+else()
+  set(TARGET_ARCH ${PLATFORM_TARGET})
+  message(STATUS "Manually set target architecture: ${TARGET_ARCH}")
+endif()
+
+if(TARGET_ARCH STREQUAL "JETSON_ORIN")
     add_definitions(-DJETSON_ORIN)
-  elseif(CPU_MODEL STREQUAL " Rockchip RK3588")
-    message(STATUS "Detected RK3588 chip")
-    set(TARGET_ARCH "RK3588")
+elseif(TARGET_ARCH STREQUAL "RK3588")
     add_definitions(-DRK3588)
     add_definitions(-DSUPPORT_H265)
-  else()
-  message(STATUS "cur model: ${COMPATIBLE_CONTENT}")
-    set(TARGET_ARCH "ARM")
+elseif(TARGET_ARCH STREQUAL "ARM")
     add_definitions(-DARM_ARCH)
-  endif()
-elseif(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|i686)$")
-  set(TARGET_ARCH "X86")
-  add_definitions(-DX86_ARCH)
-  include_directories(/usr/include/opencv4/)
-else()
-  message(STATUS "Unknown target architecture: ${CMAKE_SYSTEM_PROCESSOR}")
-  set(TARGET_ARCH "UNKNOWN")
+elseif(TARGET_ARCH STREQUAL "X86")
+    add_definitions(-DX86_ARCH)
+    include_directories(/usr/include/opencv4/)
 endif()
 
 #av_codec#
-find_library(AVCODEC_LIBRARY avcodec)
-find_library(AVFORMAT_LIBRARY avformat)
-find_library(SWSCALE_LIBRARY swscale)
-find_library(AVUTIL_LIBRARY avutil)
-find_library(AVDEVICE_LIBRARY avdevice)
-find_library(AVFILTER_LIBRARY avfilter)
-find_library(POSTPROC_LIBRARY postproc)
-find_library(SWRESAMPLE_LIBRARY swresample)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(AVCODEC REQUIRED libavcodec)
+pkg_check_modules(AVFORMAT REQUIRED libavformat)
+pkg_check_modules(SWSCALE REQUIRED libswscale)
+pkg_check_modules(AVUTIL REQUIRED libavutil)
+pkg_check_modules(AVDEVICE REQUIRED libavdevice)
+pkg_check_modules(AVFILTER REQUIRED libavfilter)
+pkg_check_modules(POSTPROC REQUIRED libpostproc)
+pkg_check_modules(SWRESAMPLE REQUIRED libswresample)
+
 find_library(LZMA_LIBRARY lzma)
 find_library(M_LIBRARY m)
 find_library(Z_LIBRARY z)
 
+include_directories(
+  ${AVCODEC_INCLUDE_DIRS}
+  ${AVFORMAT_INCLUDE_DIRS}
+  ${SWSCALE_INCLUDE_DIRS}
+  ${AVUTIL_INCLUDE_DIRS}
+  ${AVDEVICE_INCLUDE_DIRS}
+  ${AVFILTER_INCLUDE_DIRS}
+  ${POSTPROC_INCLUDE_DIRS}
+  ${SWRESAMPLE_INCLUDE_DIRS}
+)
+
 #ROS2#
-find_package(rclcpp QUIET)
+find_package(rclcpp REQUIRED)
+find_package(rclcpp_lifecycle REQUIRED)
+find_package(ament_cmake REQUIRED)
+find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
+find_package(robosense_msgs REQUIRED)
+find_package(cv_bridge REQUIRED)
+find_package(pcl_conversions REQUIRED)
+find_package(diagnostic_updater REQUIRED)
 
-if(rclcpp_FOUND)
+add_definitions(-DROS2_FOUND)
 
-  add_definitions(-DROS2_FOUND)
+# PCL # 
+find_package(PCL REQUIRED COMPONENTS common io)
+include_directories(${PCL_INCLUDE_DIRS})
+link_directories(${PCL_LIBRARY_DIRS})
+add_definitions(${PCL_DEFINITIONS})
 
-  find_package(ament_cmake REQUIRED)
-  find_package(sensor_msgs REQUIRED)
-  find_package(std_msgs REQUIRED)
-  find_package(robosense_msgs REQUIRED)
+# OpenCV 
+find_package(OpenCV REQUIRED)
+set(OPENCV_LIBS opencv_core opencv_imgcodecs opencv_imgproc) 
 
-
-  # PCL # 
-  find_package(PCL REQUIRED)
-  include_directories(${PCL_INCLUDE_DIRS})
-  link_directories(${PCL_LIBRARY_DIRS})
-  add_definitions(${PCL_DEFINITIONS})
-
-  # OpenCV 
-  find_package       (OpenCV REQUIRED)
-  include_directories(${Opencv_INCLUDE_DIRS})
-  link_directories   (${Opencv_LIBRARY_DIRS}) 
-  set(OPENCV_LIBS  opencv_core opencv_imgcodecs opencv_imgproc) 
-
-  #Eigen 
-  find_package(Eigen3 REQUIRED)
-  include_directories(${EIGEN_INCLUDE_DIRS})
-  add_definitions(${EIGEN_DEFINITIONS})
-
-else(rclcpp_FOUND)
-  message(=============================================================)
-  message("-- ROS2 Not Found. ROS2 Support is turned Off.")
-  message(=============================================================)
-endif(rclcpp_FOUND)
+#Eigen 
+find_package(Eigen3 REQUIRED)
 
 set(THIRD_PARTY_DIR ${PROJECT_SOURCE_DIR}/third_party)
 #========================
@@ -122,48 +154,73 @@ include_directories(${PROJECT_SOURCE_DIR}/devicemanager/include/)
 add_subdirectory(devicemanager)
 
 #Ros2#
-if(rclcpp_FOUND)
+find_package(rclcpp_components REQUIRED)
 
 if(TARGET_ARCH STREQUAL "RK3588")
-  add_executable(ms_node src/metaS_node.cpp)
+  add_library(ms_node_component SHARED src/metaS_node.cpp)
 else()
-  add_executable(ms_node src/metaS_node.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../ac_codec/src/jpegcoder.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../ac_codec/src/opencvjpegencoder.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../ac_codec/src/opencvjpegdecoder.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../ac_codec/src/colorcodec.cpp)
+  add_library(ms_node_component SHARED src/metaS_node.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../ac_codec/src/jpegcoder.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../ac_codec/src/opencvjpegencoder.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../ac_codec/src/opencvjpegdecoder.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../ac_codec/src/colorcodec.cpp)
 endif()
-  target_link_libraries(ms_node ${SS_LIBRARY})
-  ament_target_dependencies(ms_node rclcpp sensor_msgs robosense_msgs)
-  target_link_libraries(ms_node ${AVDEVICE_LIBRARY})
-  target_link_libraries(ms_node ${AVFILTER_LIBRARY})
-  target_link_libraries(ms_node ${AVCODEC_LIBRARY})
-  target_link_libraries(ms_node ${POSTPROC_LIBRARY})
-  target_link_libraries(ms_node ${AVFORMAT_LIBRARY})
-  target_link_libraries(ms_node ${AVUTIL_LIBRARY})
-  target_link_libraries(ms_node ${SWSCALE_LIBRARY})
-  target_link_libraries(ms_node ${SWRESAMPLE_LIBRARY})
-  target_link_libraries(ms_node ${LZMA_LIBRARY})
-  target_link_libraries(ms_node ${M_LIBRARY})
-  target_link_libraries(ms_node ${Z_LIBRARY})
-  target_link_libraries(ms_node ${PCL_LIBRARIES})
-  target_link_libraries(ms_node device)
+
+target_include_directories(ms_node_component PRIVATE
+  include
+  ${PROJECT_SOURCE_DIR}/devicemanager
+  ${PROJECT_SOURCE_DIR}/devicemanager/include
+  ${CMAKE_CURRENT_SOURCE_DIR}/../ac_codec/include
+)
+
+ament_target_dependencies(ms_node_component
+  rclcpp
+  rclcpp_components
+  rclcpp_lifecycle
+  sensor_msgs
+  robosense_msgs
+  std_msgs
+  cv_bridge
+  pcl_conversions
+  diagnostic_updater
+)
+
+
+# Standard target linking
+
+target_link_libraries(ms_node_component
+  ${AVDEVICE_LIBRARIES}
+  ${AVFILTER_LIBRARIES}
+  ${AVCODEC_LIBRARIES}
+  ${POSTPROC_LIBRARIES}
+  ${AVFORMAT_LIBRARIES}
+  ${AVUTIL_LIBRARIES}
+  ${SWSCALE_LIBRARIES}
+  ${SWRESAMPLE_LIBRARIES}
+  ${LZMA_LIBRARY}
+  ${M_LIBRARY}
+  ${Z_LIBRARY}
+  ${PCL_LIBRARIES}
+  ${OpenCV_LIBS}
+  device
+)
+
 if(TARGET_ARCH STREQUAL "RK3588")
   find_library(NUMA_LIBRARY numa)
-  target_link_libraries(ms_node ${NUMA_LIBRARY})
   find_library(MPP_LIBRARY rockchip_mpp)
-  target_link_libraries(ms_node ${MPP_LIBRARY})
   find_library(RGA_LIBRARY rga)
-  target_link_libraries(ms_node ${RGA_LIBRARY})
   find_library(DRM_LIBRARY drm)
-  target_link_libraries(ms_node ${DRM_LIBRARY})
   find_library(BZ2_LIBRARY bz2)
-  target_link_libraries(ms_node ${BZ2_LIBRARY})
   find_library(XCB_LIBRARY xcb)
-  target_link_libraries(ms_node ${XCB_LIBRARY})
-
   find_library(ASOUND_LIBRARY asound REQUIRED)
   find_library(SNDIO_LIBRARY sndio REQUIRED)
   find_library(X11_LIBRARY NAMES X11)
   find_library(XV_LIBRARY NAMES Xv)
   find_library(XEXT_LIBRARY NAMES Xext)
-  target_link_libraries(ms_node
+  
+  target_link_libraries(ms_node_component
+    ${NUMA_LIBRARY}
+    ${MPP_LIBRARY}
+    ${RGA_LIBRARY}
+    ${DRM_LIBRARY}
+    ${BZ2_LIBRARY}
+    ${XCB_LIBRARY}
     ${ASOUND_LIBRARY}
     ${SNDIO_LIBRARY}
     ${X11_LIBRARY}
@@ -171,38 +228,44 @@ if(TARGET_ARCH STREQUAL "RK3588")
     ${XV_LIBRARY}
   )
 elseif(TARGET_ARCH STREQUAL "JETSON_ORIN")
-  # 添加 cuda_nv12_remap_norm 子模块
   add_subdirectory(cuda_nv12_remap_norm)
-
-  include_directories(/usr/local/cuda/include
-    ./src) # 添加 CUDA 头文件路径
-  target_include_directories(ms_node PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../ac_codec/include)
+  target_include_directories(ms_node_component PRIVATE /usr/local/cuda/include src)
+  
   find_library(CUDA_LIBRARY cuda HINTS /usr/lib/aarch64-linux-gnu/tegra REQUIRED)
   find_library(CUDART_LIBRARY cudart HINTS /usr/local/cuda/lib64 REQUIRED)
-  if(NOT CUDA_LIBRARY OR NOT CUDART_LIBRARY)
-    message(FATAL_ERROR "Failed to find required libraries for Orin platform: CUDA_LIBRARY or CUDART_LIBRARY")
-  endif()
-  message(STATUS "Found CUDA_LIBRARY: ${CUDA_LIBRARY}")
-  message(STATUS "Found CUDART_LIBRARY: ${CUDART_LIBRARY}")
-  target_link_directories(ms_node PRIVATE ./lib)
-  target_link_libraries(ms_node 
+  
+  target_link_libraries(ms_node_component 
     ${CUDA_LIBRARY}
     ${CUDART_LIBRARY}
-    ${OpenCV_LIBS}
     cuda_nv12_remap_norm
   )
-elseif(TARGET_ARCH STREQUAL "X86" OR TARGET_ARCH STREQUAL "ARM")
-    target_include_directories(ms_node PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/../ac_codec/include)
-    target_link_libraries(ms_node ${OpenCV_LIBS})
 endif()
 
-  install(TARGETS ms_node
-    DESTINATION lib/${PROJECT_NAME}
-  )
+rclcpp_components_register_node(ms_node_component
+  PLUGIN "robosense::ac::MSPublisher"
+  EXECUTABLE ms_node
+)
 
-  install(DIRECTORY launch rviz
-    DESTINATION share/${PROJECT_NAME}
-  )
+install(TARGETS ms_node_component
+  ARCHIVE DESTINATION lib
+  LIBRARY DESTINATION lib
+  RUNTIME DESTINATION bin
+)
 
-  ament_package()
-endif(rclcpp_FOUND)
+install(TARGETS ms_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY launch rviz
+  DESTINATION share/${PROJECT_NAME}
+)
+
+if(BUILD_TESTING)
+  find_package(ament_lint_auto REQUIRED)
+  ament_lint_auto_find_test_dependencies()
+
+  find_package(launch_testing_ament_cmake REQUIRED)
+  add_launch_test(test/test_ms_node_launch.py)
+endif()
+
+ament_package()

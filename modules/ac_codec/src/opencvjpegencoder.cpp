@@ -43,7 +43,7 @@ int OpencvJpegEncoder::init(const int imageWidth, const int imageHeight,
   return 0;
 }
 
-int OpencvJpegEncoder::encode(unsigned char *yuv420Buffer, int yuv420BufferLen,
+int OpencvJpegEncoder::encode(const unsigned char *yuv420Buffer, int yuv420BufferLen,
                               unsigned char *jpegBuffer,
                               size_t &jpegBufferLen) {
   if (is_initial_ == false) {

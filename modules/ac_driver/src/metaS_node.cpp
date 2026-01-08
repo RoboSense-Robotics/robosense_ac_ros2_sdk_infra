@@ -94,13 +94,9 @@ int32_t PreprocessImageNv12(const int32_t batch_size, const void *img, const voi
 }
 #endif
 
-#ifdef ROS_FOUND
-#include <ros/ros.h>
-#include <sensor_msgs/Image.h>
-#include <sensor_msgs/Imu.h>
-#include <sensor_msgs/PointCloud2.h>
-#elif ROS2_FOUND
 #include <rclcpp/rclcpp.hpp>
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
+#include <rclcpp_components/register_node_macro.hpp>
 #include <robosense_msgs/msg/rs_compressed_image.hpp>
 #include <robosense_msgs/msg/rs_image.hpp>
 #include <robosense_msgs/msg/rs_point_cloud.hpp>
@@ -108,45 +104,44 @@ int32_t PreprocessImageNv12(const int32_t batch_size, const void *img, const voi
 #include <sensor_msgs/msg/imu.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <std_msgs/msg/string.hpp>
-#endif
+#include <diagnostic_updater/diagnostic_updater.hpp>
 
 // #define DEBUG_STATISTICS
 //#define DEBUG_TO_FILE
 
-class MSPublisher
-#ifdef ROS2_FOUND
-    : public rclcpp::Node
-#endif
-
+namespace robosense
 {
+namespace ac
+{
+
+class MSPublisher : public rclcpp_lifecycle::LifecycleNode {
 public:
   /**
    * @brief Constructor initializes the node, sets up publishers, and starts the
    * device streams.
    */
-  MSPublisher()
-#ifdef ROS2_FOUND
-      : Node("ms_node")
-#endif
-  {
-#ifdef ROS_FOUND
-    ros::NodeHandle private_nh("~"); // parameter node
-    private_nh.param<int32_t>("image_input_fps", image_input_fps, 30);
-    private_nh.param<int32_t>("imu_input_fps", imu_input_fps, 200);
-    private_nh.param<bool>("enable_jpeg", enable_jpeg, false);
-    private_nh.param<int32_t>("jpeg_quality", jpeg_quality, 70);
-#elif ROS2_FOUND
+  MSPublisher(const rclcpp::NodeOptions &options) : rclcpp_lifecycle::LifecycleNode("ms_node", options), updater_(this) {
     this->declare_parameter<int32_t>("image_input_fps", 30);
     this->declare_parameter<int32_t>("imu_input_fps", 200);
     this->declare_parameter<bool>("enable_jpeg", false);
-    this->declare_parameter<int32_t>("jpeg_quality", 70); 
+    this->declare_parameter<int32_t>("jpeg_quality", 70);
+    this->declare_parameter<int>("image_width", 1920);
+    this->declare_parameter<int>("image_height", 1080);
 
-    image_input_fps =
-        this->get_parameter("image_input_fps").get_value<int32_t>();
-    imu_input_fps = this->get_parameter("imu_input_fps").get_value<int32_t>();
-    enable_jpeg = this->get_parameter("enable_jpeg").get_value<bool>();
-    jpeg_quality = this->get_parameter("jpeg_quality").get_value<int32_t>(); 
-#endif
+    image_input_fps = this->get_parameter("image_input_fps").as_int();
+    imu_input_fps = this->get_parameter("imu_input_fps").as_int();
+    enable_jpeg = this->get_parameter("enable_jpeg").as_bool();
+    jpeg_quality = this->get_parameter("jpeg_quality").as_int();
+    imageWidth = this->get_parameter("image_width").as_int();
+    imageHeight = this->get_parameter("image_height").as_int();
+
+    // Setup diagnostics
+    updater_.setHardwareID("AC1-Sensor");
+    updater_.add("Hardware Status", this, &MSPublisher::check_hardware_status);
+
+    // Register parameter callback
+    callback_handle_ = this->add_on_set_parameters_callback(
+        std::bind(&MSPublisher::parameters_callback, this, std::placeholders::_1));
     // check setting
     if (image_input_fps != 30 && image_input_fps != 15 &&
         image_input_fps != 10) {
@@ -171,33 +166,41 @@ public:
           std::abs(imu_input_fps - 100) < std::abs(imu_input_fps - 200) ? 100
                                                                         : 200;
     }
-    std::ostringstream ostr;
-    ostr << "image_input_fps = " << image_input_fps
-         << ", imu_input_fps = " << imu_input_fps
-         << ", enable_jpeg = " << enable_jpeg
-         << ", jpeg_quality = " << jpeg_quality; 
-    logInfo(ostr.str());
+    RCLCPP_INFO(this->get_logger(), "image_input_fps = %d, imu_input_fps = %d, enable_jpeg = %s, jpeg_quality = %d",
+                image_input_fps, imu_input_fps, enable_jpeg ? "true" : "false", jpeg_quality);
 
-#ifdef ROS2_FOUND
+    // QoS standardization
+    auto qos = rclcpp::SensorDataQoS();
     const char *val = std::getenv("RMW_FASTRTPS_USE_QOS_FROM_XML");
     if (val != nullptr && std::string(val) == "1") {
       zero_copy = true;
     } else {
       zero_copy = false;
     }
-#endif
 #ifdef JETSON_ORIN
 // CUDA内存分配
 cudaStreamCreate(&stream);
 
+// Use actual image dimensions for allocation
+int current_width = imageWidth;
+int current_height = imageHeight;
+int nv12_size = current_width * current_height * 3 / 2;
+int rgb_size = current_width * current_height * 3;
+
 cudaMallocHost((void**)&workspaces, 1024);
-cudaMalloc((void**)&d_map_data, max_width * max_height * 2 * sizeof(int16_t));
-cudaMallocHost((void**)&d_nv12_data, max_data_bytes);
-cudaMallocHost((void**)&f_rgb_data, max_rgb_size * sizeof(uint8_t));
-map = cv::Mat(max_height, max_width, CV_16SC2);
-CREATE_MAP_XY(map, max_width, max_height, max_width, max_height);
-cudaMemcpy(d_map_data, map.data, max_height * max_width * 2 * sizeof(int16_t), cudaMemcpyHostToDevice);
+cudaMalloc((void**)&d_map_data, current_width * current_height * 2 * sizeof(int16_t));
+cudaMallocHost((void**)&d_nv12_data, nv12_size);
+cudaMallocHost((void**)&f_rgb_data, rgb_size * sizeof(uint8_t));
+map = cv::Mat(current_height, current_width, CV_16SC2);
+CREATE_MAP_XY(map, current_width, current_height, current_width, current_height);
+cudaMemcpy(d_map_data, map.data, current_height * current_width * 2 * sizeof(int16_t), cudaMemcpyHostToDevice);
 #endif
+  }
+
+  using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+
+  CallbackReturn on_configure(const rclcpp_lifecycle::State &) {
+    auto qos = rclcpp::SensorDataQoS();
 #ifdef DEBUG_STATISTICS
     auto point_options = rclcpp::SubscriptionOptions();
     point_options.topic_stats_options.state =
@@ -247,18 +250,18 @@ cudaMemcpy(d_map_data, map.data, max_height * max_width * 2 * sizeof(int16_t), c
 #elif ROS2_FOUND
     if (zero_copy) {
       publisher_rgb_loan = this->create_publisher<robosense_msgs::msg::RsImage>(
-          "/rs_camera/rgb", 10);
+          "/rs_camera/rgb", qos);
       publisher_depth_loan =
           this->create_publisher<robosense_msgs::msg::RsPointCloud>(
-              "/rs_lidar/points", 10);
+              "/rs_lidar/points", qos);
     } else {
       publisher_rgb =
-          this->create_publisher<sensor_msgs::msg::Image>("/rs_camera/rgb", 10);
+          this->create_publisher<robosense_msgs::msg::RsImage>("/rs_camera/rgb", 10);
       publisher_depth = this->create_publisher<sensor_msgs::msg::PointCloud2>(
-          "/rs_lidar/points", 10);
+          "/rs_lidar/points", qos);
     }
     publisher_imu =
-        this->create_publisher<sensor_msgs::msg::Imu>("/rs_imu", 10);
+        this->create_publisher<sensor_msgs::msg::Imu>("/rs_imu", qos);
 #ifdef RK3588
     publisher_h265 =
         this->create_publisher<robosense_msgs::msg::RsCompressedImage>(
@@ -273,59 +276,57 @@ cudaMemcpy(d_map_data, map.data, max_height * max_width * 2 * sizeof(int16_t), c
 
 #endif // ROS_ROS2_FOUND
 
-    // 图像分辨率信息
-    imageWidth = 1920;
-    imageHeight = 1080;
+    // Initialize the device manager and start the device discovery/manager
+    device_manager_ptr =
+        std::make_shared<robosense::device::DeviceManager>();
+    setupDeviceCallbacks();
+
 #ifdef RK3588
     avdevice_register_all();
     const AVCodec *codec = avcodec_find_encoder_by_name("hevc_rkmpp");
     if (!codec) {
-      logError("can not find h.265 codec\n");
-      shutdown();
-      return;
+      RCLCPP_ERROR(this->get_logger(), "can not find h.265 codec\n");
+      return CallbackReturn::FAILURE;
     }
 
     codecContext = avcodec_alloc_context3(codec);
     if (!codecContext) {
-      logError("can not alloc avcodec context3\n");
-      shutdown();
-      return;
+      RCLCPP_ERROR(this->get_logger(), "can not alloc avcodec context3\n");
+      return CallbackReturn::FAILURE;
     }
 
     codecContext->bit_rate = 4000000;
     codecContext->width = imageWidth;
     codecContext->height = imageHeight;
     codecContext->pix_fmt = AV_PIX_FMT_NV12;
-    codecContext->time_base = (AVRational){1, 30};
-    codecContext->framerate = (AVRational){30, 1};
-    codecContext->gop_size = 30;
+    codecContext->time_base = (AVRational){1, image_input_fps};
+    codecContext->framerate = (AVRational){image_input_fps, 1};
+    codecContext->gop_size = image_input_fps;
     codecContext->max_b_frames = 1;
 
     av_frame = av_frame_alloc();
     if (!av_frame) {
-      logError("can not alloc av frame\n");
-      return;
+      RCLCPP_ERROR(this->get_logger(), "can not alloc av frame\n");
+      return CallbackReturn::FAILURE;
     }
     av_frame->format = codecContext->pix_fmt;
     av_frame->width = codecContext->width;
     av_frame->height = codecContext->height;
     av_frame->pts = 0;
     if (av_frame_get_buffer(av_frame, 32) < 0) {
-      logError("can not get av frame buffer\n");
-      return;
+      RCLCPP_ERROR(this->get_logger(), "can not get av frame buffer\n");
+      return CallbackReturn::FAILURE;
     }
 
     if (avcodec_open2(codecContext, codec, NULL) < 0) {
-      logError("can not open avcodec\n");
-      shutdown();
-      return;
+      RCLCPP_ERROR(this->get_logger(), "can not open avcodec\n");
+      return CallbackReturn::FAILURE;
     }
 
     av_pkt = av_packet_alloc();
     if (!av_pkt) {
-      logError("can not allocl av packet\n");
-      shutdown();
-      return;
+      RCLCPP_ERROR(this->get_logger(), "can not allocl av packet\n");
+      return CallbackReturn::FAILURE;
     }
 #else
     // for X86
@@ -345,32 +346,125 @@ cudaMemcpy(d_map_data, map.data, max_height * max_width * 2 * sizeof(int16_t), c
       int ret = jpegEncoder.init(config);
       if (ret != 0) {
         RCLCPP_ERROR(this->get_logger(),
-                    "jpeg encoder(nv12) initial failed: ret = %d\n", ret);
-        rclcpp::shutdown();
-        return;
+                    "jpeg encoder(nv12) initial failed: ret = %d", ret);
+        return CallbackReturn::FAILURE;
       }
 
       nv12_image_size =
           robosense::color::ColorCodec::NV12ImageSize(imageWidth, imageHeight);
-      if(enable_jpeg){
-        jpeg_processing_thread_ =
-            std::thread(&MSPublisher::jpegProcessingLoop, this);
-      }
     }
 #endif // RK3588
+
+    rgb_buf.resize(imageWidth * imageHeight * 3);
 
 #ifdef DEBUG_TO_FILE
     outfile = fopen("test.h265", "wb");
     out_count = 100;
 #endif // DEBUG_TO_FILE
+    return CallbackReturn::SUCCESS;
+  }
 
-    try {
-      device_manager_ptr.reset(new robosense::device::DeviceManager());
-    } catch (...) {
-      logError("Malloc Device Manager Failed !");
-      return;
+  CallbackReturn on_activate(const rclcpp_lifecycle::State &) {
+    if (zero_copy) {
+      publisher_rgb_loan->on_activate();
+      publisher_depth_loan->on_activate();
+    } else {
+      publisher_rgb->on_activate();
+      publisher_depth->on_activate();
     }
+    publisher_imu->on_activate();
+#ifdef RK3588
+    publisher_h265->on_activate();
+#else
+    if (enable_jpeg) {
+      publisher_jpeg->on_activate();
+    }
+#endif
 
+#ifndef RK3588
+    if (enable_jpeg) {
+      stop_jpeg_thread_ = false;
+      jpeg_processing_thread_ = std::thread(&MSPublisher::jpegProcessingLoop, this);
+    }
+#endif
+    return CallbackReturn::SUCCESS;
+  }
+
+  CallbackReturn on_deactivate(const rclcpp_lifecycle::State &) {
+    if (zero_copy) {
+      publisher_rgb_loan->on_deactivate();
+      publisher_depth_loan->on_deactivate();
+    } else {
+      publisher_rgb->on_deactivate();
+      publisher_depth->on_deactivate();
+    }
+    publisher_imu->on_deactivate();
+#ifdef RK3588
+    publisher_h265->on_deactivate();
+#else
+    if (enable_jpeg) {
+      publisher_jpeg->on_deactivate();
+    }
+#endif
+
+#ifndef RK3588
+    if (enable_jpeg) {
+      {
+        std::lock_guard<std::mutex> lock(jpeg_mutex_);
+        stop_jpeg_thread_ = true;
+      }
+      jpeg_condition_.notify_all();
+      if (jpeg_processing_thread_.joinable()) {
+        jpeg_processing_thread_.join();
+      }
+    }
+#endif
+    return CallbackReturn::SUCCESS;
+  }
+
+  CallbackReturn on_cleanup(const rclcpp_lifecycle::State &) {
+    if (device_manager_ptr) {
+      device_manager_ptr->stop();
+      device_manager_ptr.reset();
+    }
+#ifdef RK3588
+    if (codecContext) {
+      avcodec_free_context(&codecContext);
+      codecContext = nullptr;
+    }
+    if (av_frame) {
+      av_frame_free(&av_frame);
+      av_frame = nullptr;
+    }
+    if (av_pkt) {
+      av_packet_free(&av_pkt);
+      av_pkt = nullptr;
+    }
+#endif
+#ifdef DEBUG_TO_FILE
+    if (outfile) {
+      fclose(outfile);
+      outfile = nullptr;
+    }
+#endif
+    publisher_rgb.reset();
+    publisher_rgb_loan.reset();
+    publisher_depth.reset();
+    publisher_depth_loan.reset();
+    publisher_imu.reset();
+#ifdef RK3588
+    publisher_h265.reset();
+#else
+    publisher_jpeg.reset();
+#endif
+    return CallbackReturn::SUCCESS;
+  }
+
+  CallbackReturn on_shutdown(const rclcpp_lifecycle::State &state) {
+    return on_cleanup(state);
+  }
+
+  void setupDeviceCallbacks() {
     device_manager_ptr->regDeviceEventCallback(std::bind(
         &MSPublisher::deviceEventCallback, this, std::placeholders::_1));
 
@@ -389,40 +483,24 @@ cudaMemcpy(d_map_data, map.data, max_height * max_width * 2 * sizeof(int16_t), c
     bool isSuccess =
         device_manager_ptr->init(image_input_fps, imu_input_fps, false);
     if (!isSuccess) {
-      logError("Device Manager Initial Failed !");
-      return;
+      RCLCPP_ERROR(this->get_logger(), "Device Manager Initial Failed !");
     }
-
-    logInfo("Start...");
   }
 
   /**
    * @brief Destructor cleans up the device object.
    */
   ~MSPublisher() {
-    if (device_manager_ptr) {
-      device_manager_ptr->stop();
-    }
+    on_cleanup(rclcpp_lifecycle::State());
 #ifdef JETSON_ORIN
     // CUDA内存释放
-    cudaFree(f_rgb_data);
-    cudaFree(d_nv12_data);
-    cudaFree(d_map_data);
-    cudaFree(workspaces);
-    cudaStreamDestroy(stream);
+    if (f_rgb_data) cudaFree(f_rgb_data);
+    if (d_nv12_data) cudaFree(d_nv12_data);
+    if (d_map_data) cudaFree(d_map_data);
+    if (workspaces) cudaFree(workspaces);
+    if (stream) cudaStreamDestroy(stream);
 #endif
-#ifndef RK3588
-    if(enable_jpeg)
-    {
-      std::lock_guard<std::mutex> lock(jpeg_mutex_);
-      stop_jpeg_thread_ = true;
-      jpeg_condition_.notify_all();
-    }
-    if (jpeg_processing_thread_.joinable()) {
-      jpeg_processing_thread_.join();
-    }
-#endif
-  };
+  }
 
 private:
   void deviceEventCallback(const robosense::device::DeviceEvent &deviceEvent) {
@@ -433,27 +511,25 @@ private:
       {
         std::lock_guard<std::mutex> lg(current_device_uuid_mtx);
         if (uuid == current_device_uuid) {
-          logInfo("Device uuid = " + uuid + " Already Open !");
+          RCLCPP_INFO(this->get_logger(), "Device uuid = %s Already Open !", uuid.c_str());
           return;
         } else if (!current_device_uuid.empty()) {
-          logInfo("Current Device uuid = " + current_device_uuid +
-                  " Already Open, Attach Device uuid = " + uuid +
-                  " Not Need Open Again !");
+          RCLCPP_INFO(this->get_logger(), "Current Device uuid = %s Already Open, Attach Device uuid = %s Not Need Open Again !",
+                  current_device_uuid.c_str(), uuid.c_str());
           return;
         }
       }
 
       int ret = device_manager_ptr->openDevice(uuid);
       if (ret != 0) {
-        logError("Device uuid = " + uuid +
-                 " Open Device Failed: ret = " + std::to_string(ret));
+        RCLCPP_ERROR(this->get_logger(), "Device uuid = %s Open Device Failed: ret = %d", uuid.c_str(), ret);
         return;
       }
 
       {
         std::lock_guard<std::mutex> lg(current_device_uuid_mtx);
         current_device_uuid = uuid;
-        logInfo("Device uuid = " + uuid + " Open Successed !");
+        RCLCPP_INFO(this->get_logger(), "Device uuid = %s Open Successed !", uuid.c_str());
       }
 
       break;
@@ -464,22 +540,21 @@ private:
       {
         std::lock_guard<std::mutex> lg(current_device_uuid_mtx);
         if (uuid != current_device_uuid || current_device_uuid.empty()) {
-          logInfo("Device uuid = " + uuid + " Detach But Not Need Processed !");
+          RCLCPP_INFO(this->get_logger(), "Device uuid = %s Detach But Not Need Processed !", uuid.c_str());
           return;
         }
       }
 
       int ret = device_manager_ptr->closeDevice(uuid, true);
       if (ret != 0) {
-        logError("Device uuid = " + uuid +
-                 " Detach Close Failed: ret = " + std::to_string(ret));
+        RCLCPP_ERROR(this->get_logger(), "Device uuid = %s Detach Close Failed: ret = %d", uuid.c_str(), ret);
         return;
       }
 
       {
         std::lock_guard<std::mutex> lg(current_device_uuid_mtx);
         current_device_uuid.clear();
-        logInfo("Device uuid = " + uuid + " Close Successed !");
+        RCLCPP_INFO(this->get_logger(), "Device uuid = %s Close Successed !", uuid.c_str());
       }
 
       break;
@@ -539,13 +614,13 @@ private:
     auto custom_time = ros::Time(sec, nsec);
     auto h265_msg = std::make_shared<robosense_msgs::msg::RsCompressedImage>();
 #elif ROS2_FOUND
-    auto custom_time = rclcpp::Time(sec, nsec);
+    auto custom_time = rclcpp::Time(static_cast<int32_t>(sec), nsec);
     auto h265_msg = std::make_shared<robosense_msgs::msg::RsCompressedImage>();
 #endif // ROS_ROS2_FOUND
 
     ret = av_frame_make_writable(av_frame);
     if (ret > 0) {
-      logError("av frame is not writable\n");
+      RCLCPP_ERROR(this->get_logger(), "av frame is not writable\n");
       return;
     }
     memcpy(av_frame->data[0], frame->data.get(),
@@ -560,7 +635,7 @@ private:
 
     ret = avcodec_send_frame(codecContext, av_frame);
     if (ret < 0) {
-      fprintf(stderr, "Error sending a frame for encoding\n");
+      RCLCPP_ERROR(this->get_logger(), "Error sending a frame for encoding");
     }
 
     while (ret >= 0) {
@@ -568,7 +643,7 @@ private:
       if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
         break;
       else if (ret < 0) {
-        fprintf(stderr, "Error during encoding\n");
+        RCLCPP_ERROR(this->get_logger(), "Error during encoding");
         break;
       }
 
@@ -612,17 +687,17 @@ private:
     auto custom_time = ros::Time(sec, nsec);
     auto jpeg_msg = std::make_shared<robosense_msgs::msg::RsCompressedImage>();
 #elif ROS2_FOUND
-    auto custom_time = rclcpp::Time(sec, nsec);
+    auto custom_time = rclcpp::Time(static_cast<int32_t>(sec), nsec);
     auto jpeg_msg = std::make_shared<robosense_msgs::msg::RsCompressedImage>();
 #endif // ROS_ROS2_FOUND
     std::vector<unsigned char> jpegBuffer(imageWidth * imageHeight * 4.5, '\0');
 
     size_t jpegBufferLen = jpegBuffer.size();
     ret =
-        jpegEncoder.encode((unsigned char *)frame->data.get(),
+        jpegEncoder.encode((const unsigned char *)frame->data.get(),
                            frame->data_bytes, jpegBuffer.data(), jpegBufferLen);
     if (ret != 0) {
-      fprintf(stderr, "Error jepg encoding\n");
+      RCLCPP_ERROR(this->get_logger(), "Error jepg encoding");
       return;
     }
 
@@ -648,7 +723,7 @@ void rgb_handle(const std::shared_ptr<robosense::lidar::ImageData> &frame) {
     auto custom_time = ros::Time(sec, nsec);
     auto rgb_msg = std::make_shared<sensor_msgs::Image>();
 #elif ROS2_FOUND
-    auto custom_time = rclcpp::Time(sec, nsec);
+    auto custom_time = rclcpp::Time(static_cast<int32_t>(sec), nsec);
 
 #endif // ROS_ROS2_FOUND
 
@@ -670,9 +745,9 @@ void rgb_handle(const std::shared_ptr<robosense::lidar::ImageData> &frame) {
     dst_format = RK_FORMAT_RGB_888;
 
     dst_buf_size =
-        frame->width * frame->height * get_bpp_from_format(RK_FORMAT_RGB_888);
+        frame->width * frame->height * 3;
 
-    std::vector<uint8_t> rgb_buf(dst_buf_size);
+    rgb_buf.resize(dst_buf_size);
 
     dst_buf = (char *)rgb_buf.data();
 
@@ -681,7 +756,7 @@ void rgb_handle(const std::shared_ptr<robosense::lidar::ImageData> &frame) {
     src_handle = importbuffer_virtualaddr(frame->data.get(), frame->data_bytes);
     dst_handle = importbuffer_virtualaddr(dst_buf, dst_buf_size);
     if (src_handle == 0 || dst_handle == 0) {
-      printf("%s importbuffer failed!\n", __func__);
+      RCLCPP_ERROR(this->get_logger(), "importbuffer failed!");
       if (src_handle)
         releasebuffer_handle(src_handle);
       if (dst_handle)
@@ -696,8 +771,7 @@ void rgb_handle(const std::shared_ptr<robosense::lidar::ImageData> &frame) {
 
     ret = imcheck(src_img, dst_img, {}, {});
     if (IM_STATUS_NOERROR != ret) {
-      printf("%s %d, check error! %s", __func__, __LINE__,
-             imStrError((IM_STATUS)ret));
+      RCLCPP_ERROR(this->get_logger(), "check error! %s", imStrError((IM_STATUS)ret));
       if (src_handle)
         releasebuffer_handle(src_handle);
       if (dst_handle)
@@ -707,7 +781,7 @@ void rgb_handle(const std::shared_ptr<robosense::lidar::ImageData> &frame) {
 
     ret = imcvtcolor(src_img, dst_img, src_format, dst_format);
     if (ret != IM_STATUS_SUCCESS) {
-      printf("%s imcvtcolor running failed, %s\n", __func__,
+      RCLCPP_ERROR(this->get_logger(), "imcvtcolor running failed, %s",
              imStrError((IM_STATUS)ret));
     }
 
@@ -731,7 +805,7 @@ void rgb_handle(const std::shared_ptr<robosense::lidar::ImageData> &frame) {
         width, height, width, height, nullptr, f_rgb_data, workspaces, stream, NV12);
 
     cudaStreamSynchronize(stream);
-    std::vector<uint8_t> rgb_buf(rgb_size);
+    rgb_buf.resize(rgb_size);
     cudaMemcpy(rgb_buf.data(), f_rgb_data, rgb_size * sizeof(uint8_t), cudaMemcpyDeviceToHost);
 #else
 
@@ -750,13 +824,20 @@ void rgb_handle(const std::shared_ptr<robosense::lidar::ImageData> &frame) {
       auto rgb_msg = &msg;
       rgb_msg->header.stamp = custom_time;
       const char *id_str = "rgb";
-      std::copy(id_str, id_str + strlen(id_str) + 1,
-                rgb_msg->header.frame_id.begin());
+      auto id_len = strnlen(id_str, rgb_msg->header.frame_id.size());
+      std::copy(id_str, id_str + id_len, rgb_msg->header.frame_id.begin());
+      if (id_len < rgb_msg->header.frame_id.size()) {
+          rgb_msg->header.frame_id[id_len] = '\0';
+      }
+
       rgb_msg->height = frame->height;
       rgb_msg->width = frame->width;
       const char *encoding_str = "rgb8";
-      std::copy(encoding_str, encoding_str + strlen(encoding_str) + 1,
-                rgb_msg->encoding.begin());
+      auto encoding_len = strnlen(encoding_str, rgb_msg->encoding.size());
+      std::copy(encoding_str, encoding_str + encoding_len, rgb_msg->encoding.begin());
+      if (encoding_len < rgb_msg->encoding.size()) {
+          rgb_msg->encoding[encoding_len] = '\0';
+      }
       rgb_msg->is_bigendian = false;
 #ifdef RK3588
       rgb_msg->step = frame->width * get_bpp_from_format(RK_FORMAT_RGB_888) * 1;
@@ -769,7 +850,7 @@ void rgb_handle(const std::shared_ptr<robosense::lidar::ImageData> &frame) {
         std::copy(rgb_buf.begin(), rgb_buf.end(), rgb_msg->data.begin());
       } else {
         // 处理错误：尺寸不匹配
-        RCLCPP_ERROR(rclcpp::get_logger("metaS_node"),
+        RCLCPP_ERROR(this->get_logger(),
                      "RGB buffer size too large!");
       }
 #else
@@ -779,15 +860,25 @@ void rgb_handle(const std::shared_ptr<robosense::lidar::ImageData> &frame) {
 #ifdef ROS_FOUND
       publisher_rgb.publish(*rgb_msg);
 #elif ROS2_FOUND
-      publisher_rgb_loan->publish(std::move(*rgb_msg));
+      publisher_rgb_loan->publish(std::move(loanedMsg));
 #endif // ROS_ROS2_FOUND
     } else {
-      auto rgb_msg = std::make_shared<sensor_msgs::msg::Image>();
+      auto rgb_msg = std::make_shared<robosense_msgs::msg::RsImage>();
       rgb_msg->header.stamp = custom_time;
-      rgb_msg->header.frame_id = "rgb";
+      const char *id_str = "rgb";
+      auto id_len = strnlen(id_str, 16);
+      std::copy(id_str, id_str + id_len, rgb_msg->header.frame_id.begin());
+      if (id_len < 16) {
+          rgb_msg->header.frame_id[id_len] = '\0';
+      }
       rgb_msg->height = frame->height;
       rgb_msg->width = frame->width;
-      rgb_msg->encoding = "rgb8";
+      const char *encoding_str = "rgb8";
+      auto encoding_len = strnlen(encoding_str, 8);
+      std::copy(encoding_str, encoding_str + encoding_len, rgb_msg->encoding.begin());
+      if (encoding_len < 8) {
+          rgb_msg->encoding[encoding_len] = '\0';
+      }
       rgb_msg->is_bigendian = false;
 #ifdef RK3588
       rgb_msg->step = frame->width * get_bpp_from_format(RK_FORMAT_RGB_888) * 1;
@@ -795,9 +886,8 @@ void rgb_handle(const std::shared_ptr<robosense::lidar::ImageData> &frame) {
       rgb_msg->step = frame->width * 3 * 1;
 #endif // RK3588
 #if defined(RK3588) || defined(JETSON_ORIN)
-      rgb_msg->data = rgb_buf;
+      std::copy(rgb_buf.begin(), rgb_buf.end(), rgb_msg->data.begin());
 #else
-      rgb_msg->data.resize(rgb_msg->step * frame->height);
       std::copy(frame->data.get(), frame->data.get() + rgb_msg->step * frame->height, rgb_msg->data.begin());
 #endif
 
@@ -826,8 +916,13 @@ void rgb_handle(const std::shared_ptr<robosense::lidar::ImageData> &frame) {
     auto cloud_msg = &msg;
 #endif // ROS_ROS2_FOUND
     const char *id_str = "rslidar";
-    std::copy(id_str, id_str + strlen(id_str) + 1,
-              cloud_msg->header.frame_id.begin());
+    auto frame_id_ptr = reinterpret_cast<const char*>(cloud_msg->header.frame_id.data());
+    auto id_len = strnlen(id_str, cloud_msg->header.frame_id.size());
+    std::copy(id_str, id_str + id_len, cloud_msg->header.frame_id.begin());
+    if (id_len < cloud_msg->header.frame_id.size()) {
+        cloud_msg->header.frame_id[id_len] = '\0';
+    }
+
     cloud_msg->height = 1;
     cloud_msg->width = frame->size();
 
@@ -835,8 +930,12 @@ void rgb_handle(const std::shared_ptr<robosense::lidar::ImageData> &frame) {
     const char *field_names[] = {"x",         "y",    "z",
                                  "intensity", "ring", "timestamp"};
     for (int i = 0; i < 6; i++) {
-      std::copy(field_names[i], field_names[i] + strlen(field_names[i]) + 1,
-                cloud_msg->fields[i].name.begin());
+      auto field_ptr = reinterpret_cast<const char*>(cloud_msg->fields[i].name.data());
+      auto field_len = strnlen(field_names[i], cloud_msg->fields[i].name.size());
+      std::copy(field_names[i], field_names[i] + field_len, cloud_msg->fields[i].name.begin());
+      if (field_len < cloud_msg->fields[i].name.size()) {
+          cloud_msg->fields[i].name[field_len] = '\0';
+      }
     }
     cloud_msg->fields[0].offset = 0;
 #ifdef ROS_FOUND
@@ -912,7 +1011,7 @@ void rgb_handle(const std::shared_ptr<robosense::lidar::ImageData> &frame) {
 #ifdef ROS_FOUND
     publisher_depth.publish(*cloud_msg);
 #elif ROS2_FOUND
-    publisher_depth_loan->publish(std::move(*cloud_msg));
+    publisher_depth_loan->publish(std::move(loanedMsg));
 #endif // ROS_ROS2_FOUND
   }
 
@@ -994,36 +1093,21 @@ void rgb_handle(const std::shared_ptr<robosense::lidar::ImageData> &frame) {
 
     // NOTE: msg header is points tail time
     double tail_stamp = frame->points[frame->size() - 1].timestamp;
-#ifdef ROS_FOUND
-    uint32_t sec = static_cast<uint32_t>(tail_stamp);
-    uint32_t nsec = static_cast<uint32_t>((tail_stamp - sec) * 1e9);
-    auto custom_time = ros::Time(sec, nsec);
-#elif ROS2_FOUND
     uint32_t sec = static_cast<uint32_t>(tail_stamp);
     uint32_t nsec = static_cast<uint32_t>((tail_stamp - sec) * 1e9);
     auto custom_time = rclcpp::Time(sec, nsec);
-#endif // ROS_ROS2_FOUND
 
     cloud_msg->header.stamp = custom_time;
 
-#ifdef ROS_FOUND
-    publisher_depth.publish(*cloud_msg);
-#elif ROS2_FOUND
     publisher_depth->publish(*cloud_msg);
-#endif // ROS_ROS2_FOUND
   }
 
   void imu_handle(const std::shared_ptr<robosense::lidar::ImuData> &msgPtr) {
     uint64_t timestampNs = msgPtr->timestamp * 1000000000;
     uint32_t sec = timestampNs / 1000000000;
     uint32_t nsec = timestampNs % 1000000000;
-#ifdef ROS_FOUND
-    auto custom_time = ros::Time(sec, nsec);
-    auto imu_msg = std::make_shared<sensor_msgs::Imu>();
-#elif ROS2_FOUND
     auto custom_time = rclcpp::Time(sec, nsec);
     auto imu_msg = std::make_shared<sensor_msgs::msg::Imu>();
-#endif // ROS_ROS2_FOUND
 
     imu_msg->header.stamp = custom_time;
     imu_msg->header.frame_id = "rslidar";
@@ -1036,36 +1120,55 @@ void rgb_handle(const std::shared_ptr<robosense::lidar::ImageData> &frame) {
     imu_msg->angular_velocity.y = msgPtr->angular_velocity_y;
     imu_msg->angular_velocity.z = msgPtr->angular_velocity_z;
 
-#ifdef ROS_FOUND
-    publisher_imu.publish(*imu_msg);
-#elif ROS2_FOUND
     publisher_imu->publish(*imu_msg);
-#endif // ROS_ROS2_FOUND
-  }
-
-  void logError(const std::string &message) {
-#ifdef ROS_FOUND
-    ROS_ERROR("%s", message.c_str());
-#elif ROS2_FOUND
-    RCLCPP_ERROR(this->get_logger(), message.c_str());
-#endif // ROS_ROS2_FOUND
-  }
-
-  void logInfo(const std::string &message) {
-#ifdef ROS_FOUND
-    ROS_INFO("%s", message.c_str());
-#elif ROS2_FOUND
-    RCLCPP_INFO(this->get_logger(), message.c_str());
-#endif // ROS_ROS2_FOUND
   }
 
   void shutdown() {
-#ifdef ROS_FOUND
-    ros::shutdown();
-#elif ROS2_FOUND
     rclcpp::shutdown();
-#endif // ROS_ROS2_FOUND
   }
+
+  void check_hardware_status(diagnostic_updater::DiagnosticStatusWrapper &stat) {
+    if (device_manager_ptr && !current_device_uuid.empty()) {
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::OK, "Hardware Operational");
+      stat.add("Device UUID", current_device_uuid);
+      stat.add("Image FPS", image_input_fps);
+      stat.add("IMU FPS", imu_input_fps);
+    } else {
+      stat.summary(diagnostic_msgs::msg::DiagnosticStatus::ERROR, "Device Not Connected");
+    }
+  }
+
+  rcl_interfaces::msg::SetParametersResult
+  parameters_callback(const std::vector<rclcpp::Parameter> &parameters) {
+    rcl_interfaces::msg::SetParametersResult result;
+    result.successful = true;
+    result.reason = "success";
+    for (const auto &parameter : parameters) {
+      if (parameter.get_name() == "image_input_fps") {
+        image_input_fps = parameter.as_int();
+        // Note: Real hardware change might require re-init or specific API call
+      } else if (parameter.get_name() == "imu_input_fps") {
+        imu_input_fps = parameter.as_int();
+      } else if (parameter.get_name() == "enable_jpeg") {
+        enable_jpeg = parameter.as_bool();
+      } else if (parameter.get_name() == "jpeg_quality") {
+        jpeg_quality = parameter.as_int();
+      } else if (parameter.get_name() == "image_width") {
+        imageWidth = parameter.as_int();
+      } else if (parameter.get_name() == "image_height") {
+        imageHeight = parameter.as_int();
+      }
+    }
+
+    // Standardized log using RCLCPP_INFO instead of printf
+    RCLCPP_INFO(this->get_logger(), "Updated parameters: image_input_fps = %d, imu_input_fps = %d, enable_jpeg = %s, jpeg_quality = %d, image_width = %d, image_height = %d",
+                image_input_fps, imu_input_fps, enable_jpeg ? "true" : "false", jpeg_quality, imageWidth, imageHeight);
+                
+    return result;
+  }
+
+  OnSetParametersCallbackHandle::SharedPtr callback_handle_;
+  diagnostic_updater::Updater updater_;
 
 #ifndef RK3588
   void jpegProcessingLoop() {
@@ -1112,32 +1215,21 @@ void rgb_handle(const std::shared_ptr<robosense::lidar::ImageData> &frame) {
 #endif // DEBUG_STATISTICS
 
 // ROS/ROS2 publishers for RGB images, depth point clouds, and IMU data
-#ifdef ROS_FOUND
-  ros::Publisher publisher_rgb;
-  ros::Publisher publisher_depth;
-  ros::Publisher publisher_imu;
-#ifdef RK3588
-  ros::Publisher publisher_h265;
-#else
-  ros::Publisher publisher_jpeg;
-#endif // RK3588
-
-#elif ROS2_FOUND
   bool zero_copy;
-  rclcpp::Publisher<robosense_msgs::msg::RsImage>::SharedPtr publisher_rgb_loan;
-  rclcpp::Publisher<robosense_msgs::msg::RsPointCloud>::SharedPtr
+  rclcpp_lifecycle::LifecyclePublisher<robosense_msgs::msg::RsImage>::SharedPtr publisher_rgb_loan;
+  rclcpp_lifecycle::LifecyclePublisher<robosense_msgs::msg::RsPointCloud>::SharedPtr
       publisher_depth_loan;
-  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr publisher_rgb;
+  rclcpp_lifecycle::LifecyclePublisher<robosense_msgs::msg::RsImage>::SharedPtr publisher_rgb;
+  std::vector<uint8_t> rgb_buf;
 #ifdef RK3588
-  rclcpp::Publisher<robosense_msgs::msg::RsCompressedImage>::SharedPtr
+  rclcpp_lifecycle::LifecyclePublisher<robosense_msgs::msg::RsCompressedImage>::SharedPtr
       publisher_h265;
 #else
-  rclcpp::Publisher<robosense_msgs::msg::RsCompressedImage>::SharedPtr
+  rclcpp_lifecycle::LifecyclePublisher<robosense_msgs::msg::RsCompressedImage>::SharedPtr
       publisher_jpeg;
 #endif // RK3588
-  rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr publisher_depth;
-  rclcpp::Publisher<sensor_msgs::msg::Imu>::SharedPtr publisher_imu;
-#endif // ROS_ROS2_FOUND
+  rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::PointCloud2>::SharedPtr publisher_depth;
+  rclcpp_lifecycle::LifecyclePublisher<sensor_msgs::msg::Imu>::SharedPtr publisher_imu;
 
   // 设备管理
   std::shared_ptr<robosense::device::DeviceManager> device_manager_ptr;
@@ -1170,11 +1262,6 @@ uint8_t* d_nv12_data;
 float* f_rgb_data;
 cudaStream_t stream;
 
-// 假设的最大宽度、高度和数据字节数
-const int max_width = 1920;
-const int max_height = 1080;
-const int max_data_bytes = max_width * max_height * 3 / 2;
-const int max_rgb_size = max_width * max_height * 3;
 cv::Mat map;
 #endif
 
@@ -1192,22 +1279,7 @@ cv::Mat map;
 #endif // DEBUG_TO_FILE
 };
 
-/**
- * @brief Main function initializes the ROS2 node and spins it.
- * @param argc Argument count.
- * @param argv Argument values.
- * @return Exit status.
- */
-int main(int argc, char **argv) {
-#ifdef ROS_FOUND
-  ros::init(argc, argv, "ms_node");
-  MSPublisher ms_publisher;
-  ros::spin();
-#elif ROS2_FOUND
-  rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<MSPublisher>());
-  rclcpp::shutdown();
-#endif
+} // namespace ac
+} // namespace robosense
 
-  return 0;
-}
+RCLCPP_COMPONENTS_REGISTER_NODE(robosense::ac::MSPublisher)

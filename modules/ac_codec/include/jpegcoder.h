@@ -33,10 +33,10 @@ public:
 public:
   int init(const JpegCodesConfig &jpegCodesConfig);
 
-  int encode(unsigned char *yuv420Buffer, int yuv420BufferLen,
+  int encode(const unsigned char *yuv420Buffer, int yuv420BufferLen,
              unsigned char *jpegBuffer, size_t &jpegBufferLen);
 
-  int decode(unsigned char *yuv420Buffer, int yuv420BufferLen,
+  int decode(const unsigned char *yuv420Buffer, int yuv420BufferLen,
              unsigned char *jpegBuffer, size_t &jpegBufferLen);
 
 private:

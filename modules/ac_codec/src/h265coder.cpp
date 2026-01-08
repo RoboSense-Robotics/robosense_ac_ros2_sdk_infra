@@ -15,6 +15,7 @@
 *********************************************************************************************************************/
 
 #include "h265coder.h"
+#include <rclcpp/rclcpp.hpp>
 
 namespace robosense {
 namespace h265 {
@@ -139,15 +140,13 @@ int H265Coder::encode(unsigned char *data, int dataLen,
     break;
   }
   default: {
-    std::cout << "H265 Not Support Format Type = "
-              << static_cast<int>(m_h265CodesConfig.imageFrameFormat)
-              << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "H265 Not Support Format Type = %d", static_cast<int>(m_h265CodesConfig.imageFrameFormat));
     return -3;
   }
   }
 
   if (ret != 0) {
-    std::cout << "H265 Color Space Convert Failed: ret = " << ret << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "H265 Color Space Convert Failed: ret = %d", ret);
     return -4;
   }
 
@@ -155,7 +154,7 @@ int H265Coder::encode(unsigned char *data, int dataLen,
   iFrameFlags.clear();
   ret = encode(bufferPtr, iFrameFlags);
   if (ret != 0) {
-    std::cerr << "Encode YUV Failed: ret = " << ret << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Encode YUV Failed: ret = %d", ret);
     return -5;
   }
 
@@ -165,7 +164,7 @@ int H265Coder::encode(unsigned char *data, int dataLen,
 int H265Coder::decode(unsigned char *data, const int dataLen,
                       CODER_BUFFER_PTR_VEC &bufferPtr) {
   if (data == nullptr || dataLen == 0) {
-    std::cerr << "Decode Input Data is Nullptr or Data Size = 0" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Decode Input Data is Nullptr or Data Size = 0");
     return -1;
   }
 
@@ -175,7 +174,7 @@ int H265Coder::decode(unsigned char *data, const int dataLen,
   bufferPtr.clear();
   int ret = decode(bufferPtr);
   if (ret != 0) {
-    std::cerr << "Decode H265 Failed: ret = " << ret << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Decode H265 Failed: ret = %d", ret);
     return -2;
   }
 
@@ -221,15 +220,15 @@ int H265Coder::initEncode() {
   // 寻找编码器
   m_pCodec = avcodec_find_encoder(AV_CODEC_ID_HEVC);
   if (m_pCodec == nullptr) {
-    std::cerr << "Find Encode Codec Failed !" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Find Encode Codec Failed !");
     return -1;
   }
-  std::cerr << "encode name = " << m_pCodec->name << std::endl;
+  RCLCPP_INFO(rclcpp::get_logger("h265coder"), "encode name = %s", m_pCodec->name);
 
   // 创建编码器上下文
   m_pCodecCtx = avcodec_alloc_context3(m_pCodec);
   if (m_pCodecCtx == nullptr) {
-    std::cerr << "Allocate Encode CodecContext Failed !" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Allocate Encode CodecContext Failed !");
     return -2;
   }
 
@@ -262,20 +261,20 @@ int H265Coder::initEncode() {
   av_dict_set(&params, "x265-params", "keyint=30", 0);
   ret = avcodec_open2(m_pCodecCtx, m_pCodec, &params);
   if (ret < 0) {
-    std::cerr << "Open Encode Codec Failed !" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Open Encode Codec Failed !");
     return -3;
   }
 
   // 创建编码帧
   m_pCodecFrame = av_frame_alloc();
   if (m_pCodecFrame == nullptr) {
-    std::cerr << "Allocate Encode AV Frame Failed !" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Allocate Encode AV Frame Failed !");
     return -4;
   }
 
   m_pBuffer = static_cast<unsigned char *>(av_malloc(m_bufferSize));
   if (m_pBuffer == nullptr) {
-    std::cerr << "Allocate Encode YUV Buffer Failed !" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Allocate Encode YUV Buffer Failed !");
     return -5;
   }
 
@@ -286,13 +285,13 @@ int H265Coder::initEncode() {
 
   ret = av_frame_get_buffer(m_pCodecFrame, 0);
   if (ret < 0) {
-    std::cerr << "Get Encode AV Frame Buffer Failed !" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Get Encode AV Frame Buffer Failed !");
     return -1;
   }
 
   m_pCodecPkt = av_packet_alloc();
   if (m_pCodecPkt == nullptr) {
-    std::cerr << "Allocate Encode AV Packet Failed !" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Allocate Encode AV Packet Failed !");
     return -6;
   }
 
@@ -303,41 +302,40 @@ int H265Coder::initDecode() {
   // 寻找编码器
   m_pCodec = avcodec_find_decoder(AV_CODEC_ID_HEVC);
   if (m_pCodec == nullptr) {
-    std::cerr << "Find Decode Codec Failed !" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Find Decode Codec Failed !");
     return -1;
   }
-  std::cerr << "encode name = " << m_pCodec->name << std::endl;
+  RCLCPP_INFO(rclcpp::get_logger("h265coder"), "decode name = %s", m_pCodec->name);
 
   m_pParser = av_parser_init(m_pCodec->id);
   if (m_pParser == nullptr) {
-    std::cout << "Initial Decode Parser Failed !" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Initial Decode Parser Failed !");
     return -2;
   }
 
   // 创建编码器上下文
   m_pCodecCtx = avcodec_alloc_context3(m_pCodec);
   if (m_pCodecCtx == nullptr) {
-    std::cerr << "Allocate Decode CodecContext Failed !" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Allocate Decode CodecContext Failed !");
     return -3;
   }
 
   int ret = 0;
   ret = avcodec_open2(m_pCodecCtx, m_pCodec, NULL);
   if (ret < 0) {
-    std::cerr << "Allocate Decode Codec Failed: ret = " << ret << " !"
-              << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Allocate Decode Codec Failed: ret = %d !", ret);
     return -4;
   }
 
   m_pCodecFrame = av_frame_alloc();
   if (m_pCodecFrame == nullptr) {
-    std::cerr << "Allocate Decode AV Frame Failed !" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Allocate Decode AV Frame Failed !");
     return -5;
   }
 
   m_pCodecPkt = av_packet_alloc();
   if (m_pCodecPkt == nullptr) {
-    std::cerr << "Allocate Decode AV Packet Failed !" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Allocate Decode AV Packet Failed !");
     return -6;
   }
 
@@ -368,14 +366,13 @@ int H265Coder::encode(CODER_BUFFER_PTR_VEC &bufferPtr,
 
   ret = avcodec_send_frame(m_pCodecCtx, m_pCodecFrame);
   if (ret < 0) {
-    std::cerr << "Send Encode AV Frame Failed: ret = " << ret << " !"
-              << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Send Encode AV Frame Failed: ret = %d !", ret);
     return -2;
   }
 
   ret = encodeRecv(bufferPtr, iFrameFlags);
   if (ret != 0) {
-    std::cerr << "Encode Recv Failed: ret = " << ret << " !" << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Encode Recv Failed: ret = %d !", ret);
     return -3;
   }
 
@@ -387,22 +384,20 @@ int H265Coder::decode(CODER_BUFFER_PTR_VEC &bufferPtr) {
   ret = av_packet_from_data(m_pCodecPkt, m_encodeData.data(),
                             m_encodeData.size());
   if (ret < 0) {
-    std::cerr << "Parser Decode AV Packet Failed: ret = " << ret << " !"
-              << std::endl;
+    RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Parser Decode AV Packet Failed: ret = %d !", ret);
     return -1;
   }
 
   if (m_pCodecPkt->size > 0) {
     ret = avcodec_send_packet(m_pCodecCtx, m_pCodecPkt);
     if (ret < 0) {
-      std::cerr << "Send Decode AV Packet Failed: ret = " << ret << " !"
-                << std::endl;
+      RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Send Decode AV Packet Failed: ret = %d !", ret);
       return -2;
     }
 
     ret = decodeRecv(bufferPtr);
     if (ret != 0) {
-      std::cerr << "Decode Recv Failed: ret = " << ret << " !" << std::endl;
+      RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Decode Recv Failed: ret = %d !", ret);
       return -3;
     }
   }
@@ -452,13 +447,13 @@ int H265Coder::decodeRecv(CODER_BUFFER_PTR_VEC &vecBufferPtr) {
   while (ret >= 0) {
     ret = avcodec_receive_frame(m_pCodecCtx, m_pCodecFrame);
     if (ret == AVERROR(EAGAIN)) {
-      // std::cerr << "Decode Try Again Warning !" << std::endl;
+      // RCLCPP_WARN(rclcpp::get_logger("h265coder"), "Decode Try Again Warning !");
       break;
     } else if (ret == AVERROR_EOF) {
-      std::cerr << "Decode EOF Error: ret = " << ret << " !" << std::endl;
+      RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Decode EOF Error: ret = %d !", ret);
       break;
     } else if (ret < 0) {
-      std::cerr << "Decode Other Error: ret = " << ret << " !" << std::endl;
+      RCLCPP_ERROR(rclcpp::get_logger("h265coder"), "Decode Other Error: ret = %d !", ret);
       return -1;
     }
 
@@ -467,7 +462,7 @@ int H265Coder::decodeRecv(CODER_BUFFER_PTR_VEC &vecBufferPtr) {
 
     AVPixelFormat codecFramePixFormat =
         static_cast<AVPixelFormat>(m_pCodecFrame->format);
-    if (m_frameCnt != m_pCodecCtx->frame_number) {
+    if (m_frameCnt != m_pCodecCtx->frame_num) {
       CODER_BUFFER_PTR bufferPtr(new CODER_BUFFER());
       if (m_h265CodesConfig.imageFrameFormat ==
               robosense::common::FRAME_FORMAT_YUV420P &&
@@ -596,7 +591,7 @@ int H265Coder::decodeRecv(CODER_BUFFER_PTR_VEC &vecBufferPtr) {
                   outLinesize);
       }
 
-      m_frameCnt = m_pCodecCtx->frame_number;
+      m_frameCnt = m_pCodecCtx->frame_num;
       vecBufferPtr.push_back(bufferPtr);
     }
   }
