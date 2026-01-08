@@ -52,7 +52,6 @@ elseif(TARGET_ARCH STREQUAL "ARM")
 elseif(TARGET_ARCH STREQUAL "X86")
   add_definitions(-DX86_ARCH)
   add_definitions(-DJPEG_DEF)
-  include_directories(/usr/include/opencv4/)
 endif()
 
 #av_codec#
@@ -69,17 +68,6 @@ pkg_check_modules(SWRESAMPLE REQUIRED libswresample)
 find_library(LZMA_LIBRARY lzma)
 find_library(M_LIBRARY m)
 find_library(Z_LIBRARY z)
-
-include_directories(
-  ${AVCODEC_INCLUDE_DIRS}
-  ${AVFORMAT_INCLUDE_DIRS}
-  ${SWSCALE_INCLUDE_DIRS}
-  ${AVUTIL_INCLUDE_DIRS}
-  ${AVDEVICE_INCLUDE_DIRS}
-  ${AVFILTER_INCLUDE_DIRS}
-  ${POSTPROC_INCLUDE_DIRS}
-  ${SWRESAMPLE_INCLUDE_DIRS}
-)
 
 #ROS2#
 find_package(rclcpp REQUIRED)
@@ -100,22 +88,12 @@ elseif(TARGET_ARCH STREQUAL "X86" OR TARGET_ARCH STREQUAL "ARM")
   add_library(codec_node_component SHARED src/codec_node.cpp src/jpegcoder.cpp src/opencvjpegencoder.cpp src/opencvjpegdecoder.cpp src/colorcodec.cpp src/h265coder.cpp)
 endif()
 
-target_include_directories(codec_node_component PRIVATE include)
-
-ament_target_dependencies(codec_node_component
-  rclcpp
-  rclcpp_lifecycle
-  rclcpp_components
-  sensor_msgs
-  robosense_msgs
-  std_msgs
-  cv_bridge
+target_include_directories(codec_node_component PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
 )
 
-
-# Standard target linking
-
-target_link_libraries(codec_node_component
+target_link_libraries(codec_node_component PUBLIC
   ${AVDEVICE_LIBRARIES}
   ${AVFILTER_LIBRARIES}
   ${AVCODEC_LIBRARIES}
@@ -127,8 +105,20 @@ target_link_libraries(codec_node_component
   ${LZMA_LIBRARY}
   ${M_LIBRARY}
   ${Z_LIBRARY}
-  ${OpenCV_LIBS}
+  ${OpenCV_LIBRARIES}
 )
+
+ament_target_dependencies(codec_node_component PUBLIC
+  rclcpp
+  rclcpp_lifecycle
+  rclcpp_components
+  sensor_msgs
+  robosense_msgs
+  std_msgs
+  cv_bridge
+)
+
+ament_export_targets(codec_node_component HAS_LIBRARY_TARGET)
 
 if(TARGET_ARCH STREQUAL "RK3588")
   find_library(NUMA_LIBRARY numa)

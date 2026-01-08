@@ -71,7 +71,6 @@ elseif(TARGET_ARCH STREQUAL "ARM")
     add_definitions(-DARM_ARCH)
 elseif(TARGET_ARCH STREQUAL "X86")
     add_definitions(-DX86_ARCH)
-    include_directories(/usr/include/opencv4/)
 endif()
 
 #av_codec#
@@ -89,17 +88,6 @@ find_library(LZMA_LIBRARY lzma)
 find_library(M_LIBRARY m)
 find_library(Z_LIBRARY z)
 
-include_directories(
-  ${AVCODEC_INCLUDE_DIRS}
-  ${AVFORMAT_INCLUDE_DIRS}
-  ${SWSCALE_INCLUDE_DIRS}
-  ${AVUTIL_INCLUDE_DIRS}
-  ${AVDEVICE_INCLUDE_DIRS}
-  ${AVFILTER_INCLUDE_DIRS}
-  ${POSTPROC_INCLUDE_DIRS}
-  ${SWRESAMPLE_INCLUDE_DIRS}
-)
-
 #ROS2#
 find_package(rclcpp REQUIRED)
 find_package(rclcpp_lifecycle REQUIRED)
@@ -115,13 +103,9 @@ add_definitions(-DROS2_FOUND)
 
 # PCL # 
 find_package(PCL REQUIRED COMPONENTS common io)
-include_directories(${PCL_INCLUDE_DIRS})
-link_directories(${PCL_LIBRARY_DIRS})
-add_definitions(${PCL_DEFINITIONS})
 
 # OpenCV 
 find_package(OpenCV REQUIRED)
-set(OPENCV_LIBS opencv_core opencv_imgcodecs opencv_imgproc) 
 
 #Eigen 
 find_package(Eigen3 REQUIRED)
@@ -149,8 +133,6 @@ add_definitions(-DDISABLE_PCAP_PARSE)
 #
 # devicemanager 
 # 
-include_directories(${PROJECT_SOURCE_DIR}/devicemanager) 
-include_directories(${PROJECT_SOURCE_DIR}/devicemanager/include/)
 add_subdirectory(devicemanager)
 
 #Ros2#
@@ -162,14 +144,14 @@ else()
   add_library(ms_node_component SHARED src/metaS_node.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../ac_codec/src/jpegcoder.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../ac_codec/src/opencvjpegencoder.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../ac_codec/src/opencvjpegdecoder.cpp ${CMAKE_CURRENT_SOURCE_DIR}/../ac_codec/src/colorcodec.cpp)
 endif()
 
-target_include_directories(ms_node_component PRIVATE
-  include
-  ${PROJECT_SOURCE_DIR}/devicemanager
-  ${PROJECT_SOURCE_DIR}/devicemanager/include
-  ${CMAKE_CURRENT_SOURCE_DIR}/../ac_codec/include
+target_include_directories(ms_node_component PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/devicemanager/include>
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/../ac_codec/include>
+  $<INSTALL_INTERFACE:include/${PROJECT_NAME}>
 )
 
-ament_target_dependencies(ms_node_component
+ament_target_dependencies(ms_node_component PUBLIC
   rclcpp
   rclcpp_components
   rclcpp_lifecycle
@@ -181,10 +163,8 @@ ament_target_dependencies(ms_node_component
   diagnostic_updater
 )
 
-
 # Standard target linking
-
-target_link_libraries(ms_node_component
+target_link_libraries(ms_node_component PUBLIC
   ${AVDEVICE_LIBRARIES}
   ${AVFILTER_LIBRARIES}
   ${AVCODEC_LIBRARIES}
@@ -196,9 +176,24 @@ target_link_libraries(ms_node_component
   ${LZMA_LIBRARY}
   ${M_LIBRARY}
   ${Z_LIBRARY}
-  ${PCL_LIBRARIES}
-  ${OpenCV_LIBS}
+  PCL::common
+  PCL::io
+  ${OpenCV_LIBRARIES}
   device
+)
+
+ament_export_targets(ms_node_component HAS_LIBRARY_TARGET)
+ament_export_dependencies(
+  rclcpp
+  rclcpp_components
+  rclcpp_lifecycle
+  sensor_msgs
+  robosense_msgs
+  std_msgs
+  cv_bridge
+  pcl_conversions
+  diagnostic_updater
+  PCL
 )
 
 if(TARGET_ARCH STREQUAL "RK3588")
@@ -254,6 +249,10 @@ install(TARGETS ms_node_component
 
 install(TARGETS ms_node
   DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY include/
+  DESTINATION include/${PROJECT_NAME}
 )
 
 install(DIRECTORY launch rviz
