@@ -51,7 +51,6 @@ endif(enable_test)
 #=============================
 
 install(TARGETS ${CUR_LIB}
-        EXPORT ${CUR_LIB}
         LIBRARY DESTINATION lib
         ARCHIVE DESTINATION lib
         RUNTIME DESTINATION bin

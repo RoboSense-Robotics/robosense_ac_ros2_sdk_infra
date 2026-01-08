@@ -182,7 +182,7 @@ target_link_libraries(ms_node_component PUBLIC
   device
 )
 
-ament_export_targets(ms_node_component HAS_LIBRARY_TARGET)
+# ament_export_targets(ms_node_component HAS_LIBRARY_TARGET) REMOVED
 ament_export_dependencies(
   rclcpp
   rclcpp_components

@@ -118,7 +118,15 @@ ament_target_dependencies(codec_node_component PUBLIC
   cv_bridge
 )
 
-ament_export_targets(codec_node_component HAS_LIBRARY_TARGET)
+ament_export_dependencies(
+  rclcpp
+  rclcpp_lifecycle
+  rclcpp_components
+  sensor_msgs
+  robosense_msgs
+  std_msgs
+  cv_bridge
+)
 
 if(TARGET_ARCH STREQUAL "RK3588")
   find_library(NUMA_LIBRARY numa)
