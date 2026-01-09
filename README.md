@@ -16,13 +16,13 @@ ros2_codec is the ROS middleware node decoding H265, which is used to receive H2
 
 - ROS2 docker image
 
-This tool is used to manage Docker containers for cross-platform compilation and native compilation environments of the Super Sensor SDK (ROS 2 Humble only). It includes container management, image management and automatic environment Settings and other functions. For details, view [tools/compilation_envirment/README.md](/tools/compilation_envirment/README.md) in the current directory.
+This tool is used to manage Docker containers for cross-platform compilation and native compilation environments of the Super Sensor SDK (ROS 2 Jazzy and Humble). It includes container management, image management and automatic environment Settings and other functions. For details, view [tools/compilation_envirment/README.md](/tools/compilation_envirment/README.md) in the current directory.
 
 ## 2. Prerequisites 
 
-- Ubuntu20.04 
+- Ubuntu 24.04 (Noble)
 
-- ROS2 version of the operating system matching, such as ROS2 humble installation, [ROS2 humble official installation document](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html)
+- ROS2 Jazzy Jalisco installation, [ROS2 Jazzy official installation document](https://docs.ros.org/en/jazzy/Installation/Ubuntu-Install-Debs.html)
 
 
 ## 3. Drive Install And Hardware Connect 
@@ -51,8 +51,8 @@ Due to the large amount of data transmission of the device provided by Robosense
 - Step2: Run ros build command 
 
   ```shell
-  # Set the ros2 humble environment variable installed
-  source /opt/ros/humble/setup.bash
+  # Set the ros2 jazzy environment variable installed
+  source /opt/ros/jazzy/setup.bash
   # Go to the source code root directory
   cd /codepath
   colcon build
@@ -69,10 +69,21 @@ Due to the large amount of data transmission of the device provided by Robosense
 - Step2: Run node: 
 
   ```shell
+  # Using component container (recommended)
+  ros2 launch ac_driver start.py
+  
+  # Or run standalone node
   ros2 run ac_driver ms_node [--ros-args --param image_input_fps:=30 --param imu_input_fps:=200 --param enable_jpeg:=false]
-  或 
-  ros2 launch ac_driver start.py 
   ```
+
+## 6. Docker Support (Multi-Arch)
+
+We provide a multi-architecture Docker image supporting both `amd64` and `arm64` (Jetson Orin, RK3588).
+
+```shell
+# Pull and run the latest Jazzy image
+docker run -it --rm --privileged --network host ghcr.io/robosense-robotics/robosense_ac_ros2_sdk_infra:jazzy-latest
+```
 
 
 ## 7. Topic Name And Data Type 

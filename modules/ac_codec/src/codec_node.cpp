@@ -48,16 +48,25 @@ extern "C" {
 #include <sensor_msgs/Imu.h>
 #elif ROS2_FOUND
 #include <rclcpp/rclcpp.hpp>
-#include <std_msgs/msg/string.hpp>
+#include <rclcpp_lifecycle/lifecycle_node.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <robosense_msgs/msg/rs_image.hpp>
+
+#include <std_msgs/msg/string.hpp>
 #include <sensor_msgs/msg/point_cloud2.hpp>
 #include <sensor_msgs/msg/imu.hpp>
 #include <robosense_msgs/msg/rs_compressed_image.hpp>
+#include <rclcpp_components/register_node_macro.hpp>
 #endif
+
+namespace robosense
+{
+namespace ac
+{
 
 class CodecPublisher
 #ifdef ROS2_FOUND
-    : public rclcpp::Node
+    : public rclcpp_lifecycle::LifecycleNode
 #endif
 
 {
@@ -65,41 +74,48 @@ public:
     /**
      * @brief Constructor initializes the node, sets up publishers, and starts the device streams.
      */
-    CodecPublisher()
+    CodecPublisher(const rclcpp::NodeOptions &options)
     #ifdef ROS2_FOUND
-        : Node("codec_node")
+        : rclcpp_lifecycle::LifecycleNode("codec_node", options)
     #endif
     {
+        this->declare_parameter<int>("image_width", 1920);
+        this->declare_parameter<int>("image_height", 1080);
+        imageWidth = this->get_parameter("image_width").as_int();
+        imageHeight = this->get_parameter("image_height").as_int();
+    }
+
+    using CallbackReturn = rclcpp_lifecycle::node_interfaces::LifecycleNodeInterface::CallbackReturn;
+
+    CallbackReturn on_configure(const rclcpp_lifecycle::State &) {
+        // QoS standardization
+        auto qos = rclcpp::SensorDataQoS();
         // Initialize publishers for image
         #ifdef ROS_FOUND
             ros::NodeHandle nh;
             publisher_image = nh.advertise<sensor_msgs::Image>("/camera/image_color/image", 10);
         #elif ROS2_FOUND
-            publisher_image = this->create_publisher<sensor_msgs::msg::Image>("/camera/image_color/image", 10);
+            publisher_image = this->create_publisher<robosense_msgs::msg::RsImage>("/camera/image_color/image", qos);
         #endif
-            imageWidth = 1920;
-            imageHeight = 1080; 
+
 #ifdef RK3588
     	    avdevice_register_all();
 	        av_pkt = av_packet_alloc();
             if (!av_pkt) {
             	RCLCPP_ERROR(this->get_logger(), "can not allocl av packet\n");
-            	rclcpp::shutdown();
-                return;
+                return CallbackReturn::FAILURE;
             }
 
             const AVCodec *codec = avcodec_find_decoder_by_name("hevc_rkmpp");
             if (!codec) {
             	RCLCPP_ERROR(this->get_logger(), "can not find h.265 codec\n");
-            	rclcpp::shutdown();
-                return;
+                return CallbackReturn::FAILURE;
             }
 
 	        codecContext = avcodec_alloc_context3(codec);
 	        if (!codecContext) {
             	RCLCPP_ERROR(this->get_logger(), "can not alloc avcodec context3\n");
-            	rclcpp::shutdown();
-		        return;
+		        return CallbackReturn::FAILURE;
 	        }
 
 	        //codecContext->bit_rate = 4000000;
@@ -115,15 +131,13 @@ public:
 
             if (avcodec_open2(codecContext, codec, NULL) < 0) {
             	RCLCPP_ERROR(this->get_logger(), "can not open avcodec\n");
-            	rclcpp::shutdown();
-                return;
+                return CallbackReturn::FAILURE;
             }
 
 	        av_frame = av_frame_alloc();
 	        if (!av_frame) {
             	RCLCPP_ERROR(this->get_logger(), "can not alloc av frame\n");
-            	rclcpp::shutdown();
-		    return;
+		        return CallbackReturn::FAILURE;
 	        }
 #else
             robosense::jpeg::JpegCodesConfig config;
@@ -135,59 +149,103 @@ public:
 
             int ret = jpegDecoder.init(config);
             if (ret != 0) {
-            	RCLCPP_ERROR(this->get_logger(), "jpeg decoder(nv12) initial failed: ret = %d\n", ret);
-            	rclcpp::shutdown();
-                return;
+            	RCLCPP_ERROR(this->get_logger(), "jpeg decoder(nv12) initial failed: ret = %d", ret);
+                return CallbackReturn::FAILURE;
             }
 
             nv12_image_size = robosense::color::ColorCodec::NV12ImageSize(imageWidth, imageHeight);
 #endif
 
+            rgb_buf.resize(imageWidth * imageHeight * 3);
+
 	        auto callback =
-		        [this](std::shared_ptr<const robosense_msgs::msg::RsCompressedImage> msg) -> void
+		        [this](const std::shared_ptr<const robosense_msgs::msg::RsCompressedImage> &msg) -> void
 		        {
 			        decode_handle(*msg);
 		        };
 	        sub_ = create_subscription<robosense_msgs::msg::RsCompressedImage>("/rs_camera/compressed", 10, callback);
 
-            RCLCPP_INFO(this->get_logger(), "Start...");
+            RCLCPP_INFO(this->get_logger(), "Configured...");
+            return CallbackReturn::SUCCESS;
+    }
+
+    CallbackReturn on_activate(const rclcpp_lifecycle::State &) {
+        publisher_image->on_activate();
+        RCLCPP_INFO(this->get_logger(), "Activated...");
+        return CallbackReturn::SUCCESS;
+    }
+
+    CallbackReturn on_deactivate(const rclcpp_lifecycle::State &) {
+        publisher_image->on_deactivate();
+        RCLCPP_INFO(this->get_logger(), "Deactivated...");
+        return CallbackReturn::SUCCESS;
+    }
+
+    CallbackReturn on_cleanup(const rclcpp_lifecycle::State &) {
+        sub_.reset();
+        publisher_image.reset();
+        rgb_buf.clear();
+        rgb_buf.shrink_to_fit();
+#ifdef RK3588
+        if (codecContext) {
+            avcodec_close(codecContext);
+            avcodec_free_context(&codecContext);
+            codecContext = nullptr;
+        }
+        if (av_frame) {
+            av_frame_free(&av_frame);
+            av_frame = nullptr;
+        }
+        if (av_pkt) {
+            av_packet_free(&av_pkt);
+            av_pkt = nullptr;
+        }
+#endif
+        RCLCPP_INFO(this->get_logger(), "Cleaned up...");
+        return CallbackReturn::SUCCESS;
+    }
+
+    CallbackReturn on_shutdown(const rclcpp_lifecycle::State &state) {
+        return on_cleanup(state);
     }
 
     /**
      * @brief Destructor cleans up the device object.
      */
-    ~CodecPublisher() = default;
+    ~CodecPublisher() {
+        on_cleanup(rclcpp_lifecycle::State());
+    }
 
 private:
 #ifdef RK3588
     int convert_drm_prime_to_rgb(AVFrame *drm_frame, AVFrame *rgb_frame) {
 	    AVBufferRef *hw_device_ctx = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_DRM);
 	    if (!hw_device_ctx) {
-		    fprintf(stderr, "Failed to create HW device context\n");
+		    RCLCPP_ERROR(this->get_logger(), "Failed to create HW device context");
 		    return -1;
 	    }
 
 	    AVFrame *mapped_frame = av_frame_alloc();
 	    if (!mapped_frame) {
-		    fprintf(stderr, "Failed to allocate frame\n");
+		    RCLCPP_ERROR(this->get_logger(), "Failed to allocate frame");
 		    return -1;
 	    }
 
 	    if (av_hwframe_transfer_data(mapped_frame, drm_frame, 0) < 0) {
-		    fprintf(stderr, "Failed to transfer data from DRM Prime frame\n");
+		    RCLCPP_ERROR(this->get_logger(), "Failed to transfer data from DRM Prime frame");
 		    return -1;
 	    }
 
 	    int a_f = (enum AVPixelFormat)mapped_frame->format;
 
-	    printf("format=%d, width=%d, height=%d size=%d\n", (int)(a_f), mapped_frame->width, mapped_frame->height, mapped_frame->linesize[0]);
+	    RCLCPP_INFO(this->get_logger(), "format=%d, width=%d, height=%d size=%d", (int)(a_f), mapped_frame->width, mapped_frame->height, mapped_frame->linesize[0]);
 	    struct SwsContext *sws_ctx = sws_getContext(
 			    mapped_frame->width, mapped_frame->height, (enum AVPixelFormat)mapped_frame->format,
 			    rgb_frame->width, rgb_frame->height, AV_PIX_FMT_RGB24,
 			    SWS_BILINEAR, NULL, NULL, NULL);
 
 	    if (!sws_ctx) {
-		    fprintf(stderr, "Failed to create SwsContext\n");
+		    RCLCPP_ERROR(this->get_logger(), "Failed to create SwsContext");
 		    return -1;
 	    }
 
@@ -203,58 +261,67 @@ private:
     }
 #endif
 
-    void decode_handle(robosense_msgs::msg::RsCompressedImage msg)
+    void decode_handle(const robosense_msgs::msg::RsCompressedImage &msg)
     {
         int ret;
 
-        auto rgb_msg = std::make_shared<sensor_msgs::msg::Image>();
+        auto rgb_msg = std::make_shared<robosense_msgs::msg::RsImage>();
 #ifdef RK3588
         AVPacket packet;
         av_init_packet(&packet);
         packet.data = NULL;
         packet.size = 0;
-        ret = av_packet_from_data(&packet, msg.data.data(), msg.data.size());
+        ret = av_packet_from_data(&packet, const_cast<uint8_t*>(msg.data.data()), msg.data.size());
         if (ret < 0) {
-            fprintf(stderr, "Error parsing msg data\n");
+            RCLCPP_ERROR(this->get_logger(), "Error parsing msg data");
             return;
         }
 
         if (packet.size > 0) {
-            fprintf(stderr, "sending a packet for decoding\n"); 
+            RCLCPP_DEBUG(this->get_logger(), "sending a packet for decoding"); 
             ret = avcodec_send_packet(codecContext, &packet);
             if (ret < 0) {
                 char err_msg[AV_ERROR_MAX_STRING_SIZE];
                 av_strerror(ret, err_msg, sizeof(err_msg));
-                fprintf(stderr, "Error sending a av_pkt for decoding : %s\n", err_msg); 
+                RCLCPP_ERROR(this->get_logger(), "Error sending a av_pkt for decoding : %s", err_msg); 
                 return;
             }
 
-            AVFrame *rgb_frame = av_frame_alloc();
             while (ret >= 0) {
                 ret = avcodec_receive_frame(codecContext, av_frame);
                 if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
                     break;
                 else if (ret < 0) {
-                    fprintf(stderr, "Error during decoding\n");
+                    RCLCPP_ERROR(this->get_logger(), "Error during decoding");
                     break;
                 }
 
-                printf("saving frame %3"PRId64" format=%d\n", codecContext->frame_number, av_frame->format);
+                RCLCPP_DEBUG(this->get_logger(), "saving frame %3" PRId64 " format=%d", codecContext->frame_num, av_frame->format);
 
                 AVFrame *rgb_frame = av_frame_alloc();
+                if (!rgb_frame) {
+                    RCLCPP_ERROR(this->get_logger(), "Failed to allocate RGB frame");
+                    break;
+                }
                 rgb_frame->format = AV_PIX_FMT_RGB24;
-                rgb_frame->width = av_frame->width;
-                rgb_frame->height = av_frame->height;
-                av_frame_get_buffer(rgb_frame, 0);
+                rgb_frame->width = codecContext->width;
+                rgb_frame->height = codecContext->height;
+                if (av_frame_get_buffer(rgb_frame, 0) < 0) {
+                    RCLCPP_ERROR(this->get_logger(), "Failed to get RGB frame buffer");
+                    av_frame_free(&rgb_frame);
+                    break;
+                }
 
                 if (convert_drm_prime_to_rgb(av_frame, rgb_frame) < 0) {
-                    fprintf(stderr, "Failed to convert DRM Prime frame to RGB\n");
+                    RCLCPP_ERROR(this->get_logger(), "Failed to convert DRM Prime frame to RGB");
+                    av_frame_free(&rgb_frame);
                     break;
                 }
 
 
-                std::vector<uint8_t> rgb_buf;
-                rgb_buf.resize(rgb_frame->width * rgb_frame->height * 3); 
+                if (rgb_buf.size() != rgb_frame->width * rgb_frame->height * 3) {
+                    rgb_buf.resize(rgb_frame->width * rgb_frame->height * 3);
+                }
 
                 for (int y = 0; y < rgb_frame->height; y++) {
                     memcpy(rgb_buf.data() + y * rgb_frame->width * 3, rgb_frame->data[0] + y * rgb_frame->linesize[0], rgb_frame->width * 3);
@@ -262,19 +329,30 @@ private:
 
 
                 // Publish the RGB image as a ROS Image message
-                rgb_msg->header.stamp = msg.header.stamp;
-                rgb_msg->header.frame_id = "rgb";
-                rgb_msg->height = av_frame->height;
-                rgb_msg->width = av_frame->width;
-                rgb_msg->encoding = "rgb8";
-                rgb_msg->step = av_frame->width * 3 * 1;
+                rgb_msg->header.stamp.sec = msg.header.stamp.sec;
+                rgb_msg->header.stamp.nanosec = msg.header.stamp.nanosec;
+                const char *id_str = "rgb";
+                auto id_len = strnlen(id_str, 16);
+                std::copy(id_str, id_str + id_len, rgb_msg->header.frame_id.begin());
+                if (id_len < 16) {
+                    rgb_msg->header.frame_id[id_len] = '\0';
+                }
+                rgb_msg->height = rgb_frame->height;
+                rgb_msg->width = rgb_frame->width;
+                const char *enc_str = "rgb8";
+                auto enc_len = strnlen(enc_str, 8);
+                std::copy(enc_str, enc_str + enc_len, rgb_msg->encoding.begin());
+                if (enc_len < 8) {
+                    rgb_msg->encoding[enc_len] = '\0';
+                }
+                rgb_msg->step = rgb_frame->width * 3 * 1;
                 rgb_msg->is_bigendian = false;
 
-                rgb_msg->data = rgb_buf;
+                std::copy(rgb_buf.begin(), rgb_buf.end(), rgb_msg->data.begin());
                 publisher_image->publish(*rgb_msg);
 
+                av_frame_free(&rgb_frame);
             }
-            av_frame_free(&rgb_frame);
         }
 #else
     //for X86
@@ -285,19 +363,14 @@ private:
                 jpeg_decode_buffer_len);
 
     // NV12 to RGB24  for cpu
-    unsigned int required_size;
-    unsigned int y_size;
-    uint8_t *y_plane;
-    uint8_t *uv_plane;
     int camera_height = imageHeight;
     int camera_width = imageWidth;
 
-    required_size = camera_height * camera_width * 3;
-    std::vector<uint8_t> rgb_buf(required_size);
+    rgb_buf.resize(camera_height * camera_width * 3);
 
-    y_size = camera_height * camera_width;
-    y_plane = static_cast<uint8_t *>(jpeg_decode_buffer.data());
-    uv_plane = y_plane + y_size;
+    unsigned int y_size = camera_height * camera_width;
+    uint8_t *y_plane = static_cast<uint8_t *>(jpeg_decode_buffer.data());
+    uint8_t *uv_plane = y_plane + y_size;
 
     for (int i = 0; i < camera_height; i++) {
         int y_offset = camera_width * i;
@@ -323,24 +396,36 @@ private:
     }
 
     // Publish the RGB image as a ROS Image message
-    rgb_msg->header.stamp = msg.header.stamp;
-    rgb_msg->header.frame_id = "rgb";
+    rgb_msg->header.stamp.sec = msg.header.stamp.sec;
+    rgb_msg->header.stamp.nanosec = msg.header.stamp.nanosec;
+    const char *id_str = "rgb";
+    auto id_len = strnlen(id_str, 16);
+    std::copy(id_str, id_str + id_len, rgb_msg->header.frame_id.begin());
+    if (id_len < 16) {
+        rgb_msg->header.frame_id[id_len] = '\0';
+    }
     rgb_msg->height = imageHeight;
     rgb_msg->width = imageWidth;
-    rgb_msg->encoding = "rgb8";
+    const char *enc_str = "rgb8";
+    auto enc_len = strnlen(enc_str, 8);
+    std::copy(enc_str, enc_str + enc_len, rgb_msg->encoding.begin());
+    if (enc_len < 8) {
+        rgb_msg->encoding[enc_len] = '\0';
+    }
     rgb_msg->step = imageWidth * 3 * 1;
     rgb_msg->is_bigendian = false;
 
-    rgb_msg->data = rgb_buf;
+    std::copy(rgb_buf.begin(), rgb_buf.end(), rgb_msg->data.begin());
     publisher_image->publish(*rgb_msg);
 #endif
     }
 
-    rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr publisher_image;
+    rclcpp_lifecycle::LifecyclePublisher<robosense_msgs::msg::RsImage>::SharedPtr publisher_image;
     rclcpp::Subscription<robosense_msgs::msg::RsCompressedImage>::SharedPtr sub_;
 
     int imageWidth;
     int imageHeight;
+    std::vector<uint8_t> rgb_buf;
 #ifdef RK3588
     AVCodecParserContext *parser;
     AVCodecContext* codecContext;
@@ -353,16 +438,7 @@ private:
 
 };
 
-/**
- * @brief Main function initializes the ROS2 node and spins it.
- * @param argc Argument count.
- * @param argv Argument values.
- * @return Exit status.
- */
-int main(int argc, char **argv)
-{
-	rclcpp::init(argc, argv);
-	rclcpp::spin(std::make_shared<CodecPublisher>());
-	rclcpp::shutdown();
-	return 0;
-}
+} // namespace ac
+} // namespace robosense
+
+RCLCPP_COMPONENTS_REGISTER_NODE(robosense::ac::CodecPublisher)

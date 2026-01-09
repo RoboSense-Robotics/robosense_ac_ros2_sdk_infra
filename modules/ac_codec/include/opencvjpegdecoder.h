@@ -35,7 +35,7 @@ public:
            const RS_GPU_JPEG_ENCODE_SUPPORT_TYPE output_type =
                RS_GPU_JPEG_ENCODE_SUPPORT_TYPE::RS_GPU_JPEG_SUPPORT_RGB);
 
-  int decode(unsigned char *jpegBuffer, int jpegBufferLen,
+  int decode(const unsigned char *jpegBuffer, int jpegBufferLen,
              unsigned char *rawBuffer, size_t &rawBufferLen);
 
 private:

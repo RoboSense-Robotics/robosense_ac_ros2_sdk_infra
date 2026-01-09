@@ -38,7 +38,7 @@ public:
            const RS_GPU_JPEG_ENCODE_SAMPLE_TYPE sample_type =
                RS_GPU_JPEG_ENCODE_SAMPLE_TYPE::RS_GPU_JPEG_ENCODE_SAMPLE_FULL);
 
-  int encode(unsigned char *yuv420Buffer, int yuv420BufferLen,
+  int encode(const unsigned char *yuv420Buffer, int yuv420BufferLen,
              unsigned char *jpegBuffer, size_t &jpegBufferLen);
 
 private:

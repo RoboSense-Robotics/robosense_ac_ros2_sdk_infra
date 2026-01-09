@@ -21,9 +21,9 @@ add_library(${CUR_LIB} SHARED
 
 target_include_directories(${CUR_LIB}
         PUBLIC
-        ${CUR_INCLUDES}
-        ./
-        ${CMAKE_CURRENT_BINARY_DIR}/../third_party/libuvc
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<INSTALL_INTERFACE:include>
         )
 target_link_libraries(${CUR_LIB}
         PUBLIC
@@ -51,7 +51,11 @@ endif(enable_test)
 #=============================
 
 install(TARGETS ${CUR_LIB}
-        LIBRARY DESTINATION ${HYPER_VISION_DEV_LIB_PATH}
-        ARCHIVE DESTINATION ${HYPER_VISION_DEV_LIB_PATH}
-        COMPONENT release
+        LIBRARY DESTINATION lib
+        ARCHIVE DESTINATION lib
+        RUNTIME DESTINATION bin
+        )
+
+install(DIRECTORY include/
+        DESTINATION include
         )
